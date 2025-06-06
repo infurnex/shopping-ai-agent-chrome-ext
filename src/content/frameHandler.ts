@@ -7,10 +7,16 @@ export class FrameHandler {
   private isDragging = false;
   private offsetX = 0;
   private offsetY = 0;
+  private messagesHandler: any = null;
 
   constructor() {
     this.setupEventListeners();
     this.setupMutationObserver();
+  }
+
+  // Set messages handler reference
+  setMessagesHandler(messagesHandler: any): void {
+    this.messagesHandler = messagesHandler;
   }
 
   // Create and inject the frame
@@ -300,39 +306,8 @@ export class FrameHandler {
     }, 500); // Delay to allow orientation change to complete
   }
 
-  // Execute browser action
-  private executeBrowserAction(actionData: any): void {
-    // Import and execute browser action
-    import('./actions/index').then(({ browserAction }) => {
-      browserAction(actionData);
-    }).catch((error) => {
-      console.error('Error executing browser action:', error);
-    });
-  }
-
-  // Handle messages from React app
-  private handleMessage(event: MessageEvent): void {
-    if (event.data.action === 'resize') {
-      const hostElement = document.getElementById('react-frame-host');
-      if (hostElement) {
-        this.handleFrameResize(hostElement, event.data.isCollapsed);
-      }
-    } else if (event.data.action === 'close') {
-      const hostElement = document.getElementById('react-frame-host');
-      if (hostElement) {
-        this.handleFrameClose(hostElement);
-      }
-    } else if (event.data.action === 'executeAction') {
-      // Execute browser action when requested by React app
-      this.executeBrowserAction(event.data.actionData);
-    }
-  }
-
-  // Setup event listeners
+  // Setup event listeners (removed message handling - now handled by MessagesHandler)
   private setupEventListeners(): void {
-    // Listen for resize messages from the React app
-    window.addEventListener('message', this.handleMessage.bind(this));
-    
     // Mouse events for dragging
     document.addEventListener('mousemove', this.handleMouseMove.bind(this));
     document.addEventListener('mouseup', this.handleMouseUp.bind(this));
@@ -427,7 +402,6 @@ export class FrameHandler {
     }
     
     // Remove event listeners
-    window.removeEventListener('message', this.handleMessage.bind(this));
     document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
     document.removeEventListener('mouseup', this.handleMouseUp.bind(this));
     window.removeEventListener('resize', this.handleWindowResize.bind(this));
