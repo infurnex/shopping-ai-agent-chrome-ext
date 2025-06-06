@@ -1,4 +1,4 @@
-// Enhanced content script with improved Amazon support and better product detection
+// Enhanced content script with search state persistence across page navigation
 let persistentIframe: HTMLIFrameElement | null = null;
 let hostElement: HTMLElement | null = null;
 
@@ -93,6 +93,96 @@ function injectFrame() {
   
   // If no persistent frame exists, create new one
   return createPersistentFrame();
+}
+
+// Function to store search state for persistence across navigation
+function storeSearchState(searchTerm: string, timestamp: number) {
+  const searchState = {
+    searchTerm,
+    timestamp,
+    url: window.location.href,
+    domain: window.location.hostname
+  };
+  
+  chrome.storage.local.set({ 
+    pendingSearch: searchState 
+  }, () => {
+    console.log('Search state stored:', searchState);
+  });
+}
+
+// Function to retrieve and clear search state
+function retrieveSearchState(): Promise<any> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['pendingSearch'], (result) => {
+      if (result.pendingSearch) {
+        // Clear the stored state after retrieving
+        chrome.storage.local.remove(['pendingSearch']);
+        resolve(result.pendingSearch);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+// Function to check if we should perform a pending search
+async function checkForPendingSearch() {
+  const searchState = await retrieveSearchState();
+  
+  if (searchState) {
+    const { searchTerm, timestamp, domain } = searchState;
+    const currentTime = Date.now();
+    const timeDiff = currentTime - timestamp;
+    
+    // Only proceed if:
+    // 1. The search was initiated within the last 30 seconds
+    // 2. We're on the same domain
+    // 3. The URL suggests we're on a search results page
+    if (timeDiff < 30000 && 
+        window.location.hostname === domain &&
+        isSearchResultsPage()) {
+      
+      console.log('Found pending search, looking for products:', searchTerm);
+      
+      // Send status update to chat
+      sendSearchStatusUpdate(searchTerm, 'searching');
+      
+      // Wait a bit for the page to fully load, then search for products
+      setTimeout(() => {
+        findAndClickFirstProduct(searchTerm);
+      }, 2000);
+    } else {
+      console.log('Pending search expired or invalid:', searchState);
+    }
+  }
+}
+
+// Function to check if current page is a search results page
+function isSearchResultsPage(): boolean {
+  const url = window.location.href.toLowerCase();
+  const searchIndicators = [
+    'search', 'results', 'query', 'q=', 'keywords', 'find',
+    's?', '/s/', 'search-alias', 'field-keywords'
+  ];
+  
+  return searchIndicators.some(indicator => url.includes(indicator));
+}
+
+// Function to send search status updates to chat
+function sendSearchStatusUpdate(searchTerm: string, status: 'searching' | 'found' | 'not_found') {
+  const messages = {
+    searching: `🔍 Search completed for "${searchTerm}". Now looking for the first product...`,
+    found: `✅ Found and clicked the first product for "${searchTerm}"`,
+    not_found: `❌ No products found for "${searchTerm}" on this page`
+  };
+  
+  window.postMessage({
+    action: 'searchStatusUpdate',
+    searchTerm,
+    status,
+    message: messages[status]
+  }, '*');
 }
 
 // Enhanced function to find and click the first product with better Amazon support
@@ -454,6 +544,9 @@ function sendProductClickFeedback(searchTerm: string, success: boolean, productU
 function performSearch(searchTerm: string) {
   console.log('Performing search for:', searchTerm);
   
+  // Store search state before performing search (in case of navigation)
+  storeSearchState(searchTerm, Date.now());
+  
   // Enhanced search input selectors with Amazon-specific ones
   const searchSelectors = [
     // Amazon specific
@@ -680,15 +773,15 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
     console.log('Clicking search button');
     searchButton.click();
     
-    // After search is triggered, wait and then look for products
-    findAndClickFirstProduct(searchTerm);
+    // Note: After search is triggered, the page will navigate
+    // The pending search will be handled by checkForPendingSearch() on the new page
     
   } else if (form) {
     console.log('Submitting form');
     form.submit();
     
-    // After search is triggered, wait and then look for products
-    findAndClickFirstProduct(searchTerm);
+    // Note: After search is triggered, the page will navigate
+    // The pending search will be handled by checkForPendingSearch() on the new page
     
   } else {
     // Try Enter key as last resort
@@ -724,8 +817,8 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
     });
     searchInput.dispatchEvent(keyupEvent);
     
-    // After search is triggered, wait and then look for products
-    findAndClickFirstProduct(searchTerm);
+    // Note: After search is triggered, the page will navigate
+    // The pending search will be handled by checkForPendingSearch() on the new page
   }
 }
 
@@ -925,7 +1018,7 @@ function setFrameVisibility(isVisible: boolean) {
   }
 }
 
-// Enhanced initialization with persistence check
+// Enhanced initialization with persistence check and pending search check
 function initializeFrame() {
   chrome.storage.local.get(['frameVisible'], (result) => {
     const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
@@ -953,6 +1046,11 @@ function initializeFrame() {
       }
     }
   });
+  
+  // Check for pending search after a short delay to let the page load
+  setTimeout(() => {
+    checkForPendingSearch();
+  }, 1000);
 }
 
 // Initialize frame

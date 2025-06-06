@@ -12,17 +12,19 @@ import {
   Search,
   ShoppingCart,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai' | 'search' | 'system';
+  type: 'user' | 'ai' | 'search' | 'system' | 'status';
   content: string;
   timestamp: Date;
   image?: string;
   searchTerm?: string;
   success?: boolean;
+  status?: 'searching' | 'found' | 'not_found';
 }
 
 const App: React.FC = () => {
@@ -54,7 +56,7 @@ const App: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Listen for product click results from content script
+  // Listen for product click results and search status updates from content script
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.action === 'productClickResult') {
@@ -67,6 +69,16 @@ const App: React.FC = () => {
           searchTerm: event.data.searchTerm
         };
         setMessages(prev => [...prev, resultMessage]);
+      } else if (event.data.action === 'searchStatusUpdate') {
+        const statusMessage: Message = {
+          id: Date.now().toString(),
+          type: 'status',
+          content: event.data.message,
+          timestamp: new Date(),
+          searchTerm: event.data.searchTerm,
+          status: event.data.status
+        };
+        setMessages(prev => [...prev, statusMessage]);
       }
     };
 
@@ -197,7 +209,7 @@ const App: React.FC = () => {
       const confirmMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: `I've initiated a search for "${currentSearchTerm}" on this website. I'll search for the product and automatically click on the first result found.`,
+        content: `I've initiated a search for "${currentSearchTerm}" on this website. I'll search for the product and automatically click on the first result found. This may cause the page to navigate to search results.`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, confirmMessage]);
@@ -225,6 +237,10 @@ const App: React.FC = () => {
         return <Bot size={16} />;
       case 'search':
         return <Search size={16} />;
+      case 'status':
+        return message.status === 'searching' ? <Clock size={16} /> : 
+               message.status === 'found' ? <CheckCircle size={16} /> : 
+               <AlertCircle size={16} />;
       case 'system':
         return message.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />;
       default:

@@ -7,6 +7,7 @@
   --success-color: #10b981;
   --warning-color: #f59e0b;
   --error-color: #ef4444;
+  --info-color: #3b82f6;
   --background-color: rgba(255, 255, 255, 0.98);
   --surface-color: #ffffff;
   --text-primary: #111827;
@@ -258,6 +259,11 @@ html, body {
   color: white;
 }
 
+.message.status .message-avatar {
+  background: linear-gradient(135deg, var(--info-color) 0%, var(--primary-color) 100%);
+  color: white;
+}
+
 .message-content {
   flex: 1;
   max-width: 80%;
@@ -311,6 +317,12 @@ html, body {
 
 .message.system .message-text {
   background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
+  color: white;
+  border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
+}
+
+.message.status .message-text {
+  background: linear-gradient(135deg, var(--info-color) 0%, var(--primary-color) 100%);
   color: white;
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
