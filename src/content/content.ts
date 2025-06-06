@@ -146,57 +146,38 @@ function ensureFrameInBounds(hostElement: HTMLElement) {
 function enableDragging(element: HTMLElement) {
   let isDragging = false;
   let offsetX = 0, offsetY = 0;
-  let dragStarted = false;
   
-  // Create a more targeted drag handle - only covers the title area, not the controls
+  // Create drag handle and append to host element
   const dragHandle = document.createElement('div');
   Object.assign(dragHandle.style, {
     position: 'absolute',
     top: '0',
     left: '0',
-    width: 'calc(100% - 80px)', // Leave space for controls on the right
+    width: '100%',
     height: '48px', // Height of the header
     cursor: 'move',
     zIndex: '2147483646',
     backgroundColor: 'transparent',
-    borderRadius: '16px 0 0 0',
-    pointerEvents: 'auto', // Ensure it can receive events
+    borderRadius: '16px 16px 0 0',
   });
   
   element.appendChild(dragHandle);
   
   // Mouse events for dragging
   dragHandle.addEventListener('mousedown', (e) => {
-    // Only start dragging on left mouse button
-    if (e.button !== 0) return;
-    
     isDragging = true;
-    dragStarted = false;
     const rect = element.getBoundingClientRect();
     offsetX = e.clientX - rect.left;
     offsetY = e.clientY - rect.top;
     e.preventDefault();
-    e.stopPropagation();
     
-    // Add visual feedback
-    element.style.transition = 'none'; // Disable transitions during drag
+    // Add dragging class for visual feedback
+    element.style.cursor = 'grabbing';
     dragHandle.style.cursor = 'grabbing';
   });
   
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    
-    // Only start actual dragging after a small movement threshold
-    if (!dragStarted) {
-      const deltaX = Math.abs(e.clientX - (element.getBoundingClientRect().left + offsetX));
-      const deltaY = Math.abs(e.clientY - (element.getBoundingClientRect().top + offsetY));
-      
-      if (deltaX > 5 || deltaY > 5) {
-        dragStarted = true;
-      } else {
-        return; // Don't start dragging yet
-      }
-    }
     
     const newLeft = e.clientX - offsetX;
     const newTop = e.clientY - offsetY;
@@ -211,18 +192,12 @@ function enableDragging(element: HTMLElement) {
     element.style.left = `${constrainedLeft}px`;
     element.style.top = `${constrainedTop}px`;
     element.style.bottom = 'auto'; // Use top positioning while dragging
-    
-    e.preventDefault();
-    e.stopPropagation();
   });
   
-  document.addEventListener('mouseup', (e) => {
+  document.addEventListener('mouseup', () => {
     if (isDragging) {
       isDragging = false;
-      dragStarted = false;
-      
-      // Restore transitions
-      element.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+      element.style.cursor = 'auto';
       dragHandle.style.cursor = 'move';
       
       // Convert back to bottom positioning for consistency
@@ -230,23 +205,6 @@ function enableDragging(element: HTMLElement) {
       const bottomPosition = window.innerHeight - rect.bottom;
       element.style.bottom = `${bottomPosition}px`;
       element.style.top = 'auto';
-      
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  });
-  
-  // Prevent context menu on drag handle
-  dragHandle.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
-  
-  // Ensure clicks on the drag handle don't interfere with iframe content
-  dragHandle.addEventListener('click', (e) => {
-    if (!dragStarted) {
-      // If we didn't drag, allow the click to pass through to iframe
-      e.stopPropagation();
     }
   });
 }
