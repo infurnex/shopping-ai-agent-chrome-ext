@@ -8,15 +8,21 @@ import {
   Paperclip,
   Bot,
   User,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
+import { callAIAgent, AIResponse } from '../services/aiService';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai';
+  type: 'user' | 'ai' | 'action';
   content: string;
   timestamp: Date;
   image?: string;
+  action?: {
+    type: string;
+    params: any;
+  };
 }
 
 const App: React.FC = () => {
@@ -25,7 +31,7 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI assistant. How can I help you today? Feel free to ask questions or upload images for analysis.',
+      content: 'Hello! I\'m your AI shopping assistant. I can help you search for products on this website. Try asking me to "search for red t-shirt" or upload an image of something you\'d like to find!',
       timestamp: new Date()
     }
   ]);
@@ -76,31 +82,23 @@ const App: React.FC = () => {
     }
   };
 
-  const simulateAIResponse = async (userMessage: string, hasImage: boolean): Promise<string> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+  const executeAction = (action: { type: string; params: any }) => {
+    // Send message to content script to execute browser action
+    window.parent.postMessage({
+      action: 'executeAction',
+      actionData: action
+    }, '*');
     
-    const responses = [
-      "That's an interesting question! Let me help you with that.",
-      "I understand what you're asking. Here's my perspective on this topic.",
-      "Great question! Based on what you've shared, I think...",
-      "I can definitely help you with that. Let me break this down for you.",
-      "That's a thoughtful inquiry. Here's what I would suggest..."
-    ];
-
-    const imageResponses = [
-      "I can see the image you've uploaded. It appears to show...",
-      "Thanks for sharing that image! I can analyze what I see here.",
-      "Interesting image! Let me describe what I observe and provide some insights.",
-      "I've analyzed your image. Here's what stands out to me..."
-    ];
-
-    if (hasImage) {
-      return imageResponses[Math.floor(Math.random() * imageResponses.length)] + " " + 
-             responses[Math.floor(Math.random() * responses.length)];
-    }
+    // Add action message to chat
+    const actionMessage: Message = {
+      id: (Date.now() + 2).toString(),
+      type: 'action',
+      content: `🔍 Searching for "${action.params.query}"...`,
+      timestamp: new Date(),
+      action: action
+    };
     
-    return responses[Math.floor(Math.random() * responses.length)];
+    setMessages(prev => [...prev, actionMessage]);
   };
 
   const handleSendMessage = async () => {
@@ -115,6 +113,7 @@ const App: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputValue.trim();
     setInputValue('');
     setSelectedImage(null);
     setIsLoading(true);
@@ -124,18 +123,35 @@ const App: React.FC = () => {
     }
 
     try {
-      const aiResponse = await simulateAIResponse(userMessage.content, !!userMessage.image);
+      const aiResponse: AIResponse = await callAIAgent(currentInput, !!selectedImage);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: aiResponse,
+        content: aiResponse.message,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiMessage]);
+      
+      // Execute action if AI decided to take action
+      if (aiResponse.takeAction && aiResponse.action) {
+        setTimeout(() => {
+          executeAction(aiResponse.action!);
+        }, 500); // Small delay for better UX
+      }
+      
     } catch (error) {
       console.error('Error getting AI response:', error);
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -157,7 +173,7 @@ const App: React.FC = () => {
       <div className="frame-header">
         <div className="frame-title">
           <Bot size={16} />
-          AI Assistant
+          AI Shopping Assistant
         </div>
         <div className="frame-controls">
           <button className="control-button" onClick={toggleCollapse}>
@@ -175,7 +191,13 @@ const App: React.FC = () => {
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className="message-avatar">
-                  {message.type === 'ai' ? <Bot size={16} /> : <User size={16} />}
+                  {message.type === 'ai' ? (
+                    <Bot size={16} />
+                  ) : message.type === 'action' ? (
+                    <Search size={16} />
+                  ) : (
+                    <User size={16} />
+                  )}
                 </div>
                 <div className="message-content">
                   {message.image && (
@@ -242,7 +264,7 @@ const App: React.FC = () => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
+                placeholder="Try: 'search for red t-shirt' or 'find wireless headphones'"
                 className="message-input"
                 rows={1}
                 disabled={isLoading}

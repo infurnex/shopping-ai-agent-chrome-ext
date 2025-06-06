@@ -300,6 +300,16 @@ export class FrameHandler {
     }, 500); // Delay to allow orientation change to complete
   }
 
+  // Execute browser action
+  private executeBrowserAction(actionData: any): void {
+    // Import and execute browser action
+    import('./actions/index').then(({ browserAction }) => {
+      browserAction(actionData);
+    }).catch((error) => {
+      console.error('Error executing browser action:', error);
+    });
+  }
+
   // Handle messages from React app
   private handleMessage(event: MessageEvent): void {
     if (event.data.action === 'resize') {
@@ -312,6 +322,9 @@ export class FrameHandler {
       if (hostElement) {
         this.handleFrameClose(hostElement);
       }
+    } else if (event.data.action === 'executeAction') {
+      // Execute browser action when requested by React app
+      this.executeBrowserAction(event.data.actionData);
     }
   }
 
