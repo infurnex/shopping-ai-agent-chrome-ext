@@ -160,10 +160,18 @@ const App: React.FC = () => {
           AI Assistant
         </div>
         <div className="frame-controls">
-          <button className="control-button" onClick={toggleCollapse}>
+          <button 
+            className="control-button" 
+            onClick={toggleCollapse}
+            title={isCollapsed ? 'Expand' : 'Collapse'}
+          >
             {isCollapsed ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
           </button>
-          <button className="control-button" onClick={handleClose}>
+          <button 
+            className="control-button" 
+            onClick={handleClose}
+            title="Close"
+          >
             <X size={16} />
           </button>
         </div>
