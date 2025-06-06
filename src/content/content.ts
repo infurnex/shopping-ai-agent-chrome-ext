@@ -1,4 +1,4 @@
-// Enhanced content script with iframe persistence and product clicking
+// Enhanced content script with improved Amazon support and better product detection
 let persistentIframe: HTMLIFrameElement | null = null;
 let hostElement: HTMLElement | null = null;
 
@@ -95,14 +95,37 @@ function injectFrame() {
   return createPersistentFrame();
 }
 
-// Enhanced function to find and click the first product
+// Enhanced function to find and click the first product with better Amazon support
 function findAndClickFirstProduct(searchTerm: string) {
   console.log('Looking for first product related to:', searchTerm);
   
-  // Wait for search results to load
+  // Wait longer for Amazon search results to load
   setTimeout(() => {
+    // Enhanced Amazon-specific selectors
+    const amazonSelectors = [
+      // Amazon search results
+      '[data-component-type="s-search-result"]',
+      '.s-result-item[data-component-type="s-search-result"]',
+      '.s-result-item .s-product-image-container a',
+      '.s-result-item h2 a',
+      '.s-result-item [data-cy="title-recipe-title"] a',
+      '.s-result-item .a-link-normal',
+      
+      // Amazon product grid
+      '.s-main-slot .s-result-item',
+      '.s-search-results .s-result-item',
+      
+      // Amazon sponsored results (but we'll filter these out)
+      '.s-result-item:not([data-component-type="sp-sponsored-result"])',
+      
+      // Amazon product links
+      'a[href*="/dp/"]',
+      'a[href*="/gp/product/"]',
+      'a[href*="/product/"]',
+    ];
+    
     // Comprehensive product selectors for various e-commerce sites
-    const productSelectors = [
+    const genericSelectors = [
       // Generic product selectors
       '.product',
       '.product-item',
@@ -113,11 +136,6 @@ function findAndClickFirstProduct(searchTerm: string) {
       '.listing',
       '.search-result',
       '.result-item',
-      
-      // Amazon specific
-      '[data-component-type="s-search-result"]',
-      '.s-result-item',
-      '.a-section.a-spacing-base',
       
       // eBay specific
       '.s-item',
@@ -144,39 +162,55 @@ function findAndClickFirstProduct(searchTerm: string) {
       '.catalog-item',
       '.merchandise',
       '.goods',
-      
-      // Link-based selectors (for product links)
-      'a[href*="/product"]',
-      'a[href*="/item"]',
-      'a[href*="/p/"]',
-      'a[href*="/dp/"]', // Amazon
-      'a[href*="/gp/"]', // Amazon
-      'a[href*="/itm/"]', // eBay
     ];
     
     let firstProduct: HTMLElement | null = null;
     let productLink: HTMLAnchorElement | null = null;
     
+    // First, try Amazon-specific selectors if we're on Amazon
+    const isAmazon = window.location.hostname.includes('amazon');
+    const selectorsToTry = isAmazon ? [...amazonSelectors, ...genericSelectors] : [...genericSelectors, ...amazonSelectors];
+    
+    console.log('Searching on:', window.location.hostname, 'Is Amazon:', isAmazon);
+    
     // Try to find the first visible product
-    for (const selector of productSelectors) {
+    for (const selector of selectorsToTry) {
       const products = document.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+      console.log(`Trying selector "${selector}": found ${products.length} elements`);
       
-      for (const product of products) {
+      for (let i = 0; i < products.length; i++) {
+        const product = products[i];
+        
         // Check if product is visible and not an ad
-        if (isElementVisible(product) && !isAdvertisement(product)) {
+        if (isElementVisible(product) && !isAdvertisement(product) && !isSponsoredResult(product)) {
+          console.log(`Checking product ${i + 1}:`, product);
+          
           // Check if it's already a clickable link
           if (product.tagName.toLowerCase() === 'a') {
             productLink = product as HTMLAnchorElement;
             firstProduct = product;
+            console.log('Found direct link product:', productLink.href);
             break;
           }
           
           // Look for clickable elements within the product
-          const clickableElements = product.querySelectorAll('a, button, [role="button"]') as NodeListOf<HTMLElement>;
+          const clickableElements = product.querySelectorAll('a[href], button, [role="button"]') as NodeListOf<HTMLElement>;
           for (const clickable of clickableElements) {
             if (isProductLink(clickable) && isElementVisible(clickable)) {
               firstProduct = product;
               productLink = clickable as HTMLAnchorElement;
+              console.log('Found clickable element in product:', productLink.href);
+              break;
+            }
+          }
+          
+          // For Amazon, also try to find the main product link
+          if (isAmazon && !productLink) {
+            const amazonLink = product.querySelector('h2 a, [data-cy="title-recipe-title"] a, .a-link-normal') as HTMLAnchorElement;
+            if (amazonLink && amazonLink.href && isElementVisible(amazonLink)) {
+              firstProduct = product;
+              productLink = amazonLink;
+              console.log('Found Amazon product link:', productLink.href);
               break;
             }
           }
@@ -190,6 +224,8 @@ function findAndClickFirstProduct(searchTerm: string) {
     
     // If no specific product found, try more generic approaches
     if (!firstProduct) {
+      console.log('No products found with specific selectors, trying generic approach');
+      
       // Look for any clickable elements that might be products
       const allLinks = document.querySelectorAll('a[href]') as NodeListOf<HTMLAnchorElement>;
       
@@ -197,16 +233,18 @@ function findAndClickFirstProduct(searchTerm: string) {
         if (isElementVisible(link) && 
             isProductLink(link) && 
             !isAdvertisement(link) &&
+            !isSponsoredResult(link) &&
             isLikelyProductResult(link, searchTerm)) {
           firstProduct = link;
           productLink = link;
+          console.log('Found generic product link:', productLink.href);
           break;
         }
       }
     }
     
     if (firstProduct && productLink) {
-      console.log('Found first product, clicking:', firstProduct);
+      console.log('Found first product, preparing to click:', firstProduct);
       
       // Scroll to the product to ensure it's visible
       firstProduct.scrollIntoView({ 
@@ -220,40 +258,53 @@ function findAndClickFirstProduct(searchTerm: string) {
       // Click the product after a short delay
       setTimeout(() => {
         try {
+          console.log('Clicking product link:', productLink!.href);
+          
           // Try multiple click methods for better compatibility
+          productLink!.focus();
           productLink!.click();
           
-          // Fallback: dispatch click event
-          const clickEvent = new MouseEvent('click', {
-            bubbles: true,
-            cancelable: true,
-            view: window
-          });
-          productLink!.dispatchEvent(clickEvent);
+          // Fallback: dispatch multiple events
+          const events = [
+            new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+            new MouseEvent('mouseup', { bubbles: true, cancelable: true }),
+            new MouseEvent('click', { bubbles: true, cancelable: true }),
+          ];
           
-          // If it's a link, we can also try navigation
-          if (productLink!.href) {
-            console.log('Navigating to product:', productLink!.href);
-            // Let the click handle navigation naturally
+          events.forEach(event => {
+            productLink!.dispatchEvent(event);
+          });
+          
+          // If it's a link with href, try programmatic navigation as fallback
+          if (productLink!.href && productLink!.href !== window.location.href) {
+            setTimeout(() => {
+              if (window.location.href === productLink!.href) {
+                console.log('Navigation successful via click');
+              } else {
+                console.log('Click may not have worked, trying programmatic navigation');
+                window.location.href = productLink!.href;
+              }
+            }, 1000);
           }
           
           console.log('Successfully clicked first product');
           
           // Send feedback to the chat
-          sendProductClickFeedback(searchTerm, true);
+          sendProductClickFeedback(searchTerm, true, productLink!.href);
           
         } catch (error) {
           console.error('Error clicking product:', error);
           sendProductClickFeedback(searchTerm, false);
         }
-      }, 1000);
+      }, 1500);
       
     } else {
       console.warn('No products found on this page');
+      console.log('Page content sample:', document.body.innerHTML.substring(0, 500));
       sendProductClickFeedback(searchTerm, false);
     }
     
-  }, 2000); // Wait 2 seconds for search results to load
+  }, isAmazon ? 3000 : 2000); // Wait longer for Amazon
 }
 
 // Helper function to check if element is visible
@@ -267,7 +318,9 @@ function isElementVisible(element: HTMLElement): boolean {
     style.display !== 'none' &&
     style.visibility !== 'hidden' &&
     style.opacity !== '0' &&
-    element.offsetParent !== null
+    element.offsetParent !== null &&
+    rect.top < window.innerHeight &&
+    rect.bottom > 0
   );
 }
 
@@ -281,12 +334,41 @@ function isAdvertisement(element: HTMLElement): boolean {
   const elementText = element.textContent?.toLowerCase() || '';
   const className = element.className?.toLowerCase() || '';
   const id = element.id?.toLowerCase() || '';
+  const dataAttrs = Array.from(element.attributes)
+    .filter(attr => attr.name.startsWith('data-'))
+    .map(attr => attr.value.toLowerCase())
+    .join(' ');
   
   return adIndicators.some(indicator => 
     elementText.includes(indicator) ||
     className.includes(indicator) ||
-    id.includes(indicator)
+    id.includes(indicator) ||
+    dataAttrs.includes(indicator)
   );
+}
+
+// Helper function to check if element is a sponsored result (Amazon specific)
+function isSponsoredResult(element: HTMLElement): boolean {
+  // Check for Amazon sponsored indicators
+  const sponsoredIndicators = [
+    '[data-component-type="sp-sponsored-result"]',
+    '.s-sponsored-label-info-icon',
+    '.a-color-secondary:contains("Sponsored")',
+    '[aria-label*="Sponsored"]'
+  ];
+  
+  // Check if element or its parents contain sponsored indicators
+  let current: HTMLElement | null = element;
+  while (current && current !== document.body) {
+    if (current.getAttribute('data-component-type') === 'sp-sponsored-result' ||
+        current.querySelector('.s-sponsored-label-info-icon') ||
+        current.textContent?.includes('Sponsored')) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  
+  return false;
 }
 
 // Helper function to check if element is a product link
@@ -301,7 +383,7 @@ function isProductLink(element: HTMLElement): boolean {
   // Check for product-related URL patterns
   const productPatterns = [
     '/product', '/item', '/p/', '/dp/', '/gp/', '/itm/',
-    'product-', 'item-', 'sku-', 'catalog'
+    'product-', 'item-', 'sku-', 'catalog', '/asin/'
   ];
   
   return productPatterns.some(pattern => href.includes(pattern));
@@ -324,7 +406,9 @@ function isLikelyProductResult(element: HTMLElement, searchTerm: string): boolea
     '.product-list',
     '.listing-results',
     '[class*="result"]',
-    '[class*="search"]'
+    '[class*="search"]',
+    '.s-main-slot', // Amazon specific
+    '.s-search-results' // Amazon specific
   ].join(', ')) !== null;
   
   return containsSearchTerms || isInResults;
@@ -334,29 +418,35 @@ function isLikelyProductResult(element: HTMLElement, searchTerm: string): boolea
 function highlightElement(element: HTMLElement) {
   const originalStyle = {
     outline: element.style.outline,
-    boxShadow: element.style.boxShadow
+    boxShadow: element.style.boxShadow,
+    transition: element.style.transition
   };
   
-  // Add highlight
+  // Add highlight with animation
+  element.style.transition = 'all 0.3s ease';
   element.style.outline = '3px solid #10b981';
   element.style.boxShadow = '0 0 0 6px rgba(16, 185, 129, 0.3)';
   
-  // Remove highlight after 2 seconds
+  // Remove highlight after 3 seconds
   setTimeout(() => {
+    element.style.transition = originalStyle.transition;
     element.style.outline = originalStyle.outline;
     element.style.boxShadow = originalStyle.boxShadow;
-  }, 2000);
+  }, 3000);
 }
 
 // Function to send feedback to the chat
-function sendProductClickFeedback(searchTerm: string, success: boolean) {
+function sendProductClickFeedback(searchTerm: string, success: boolean, productUrl?: string) {
+  const message = success 
+    ? `✅ Successfully found and clicked the first product for "${searchTerm}"${productUrl ? ` (${productUrl})` : ''}`
+    : `❌ Could not find any products for "${searchTerm}" on this page. Try refining your search term or make sure you're on a shopping website.`;
+    
   window.postMessage({
     action: 'productClickResult',
     searchTerm,
     success,
-    message: success 
-      ? `Successfully found and clicked the first product for "${searchTerm}"`
-      : `Could not find any products for "${searchTerm}" on this page`
+    message,
+    productUrl
   }, '*');
 }
 
@@ -364,8 +454,14 @@ function sendProductClickFeedback(searchTerm: string, success: boolean) {
 function performSearch(searchTerm: string) {
   console.log('Performing search for:', searchTerm);
   
-  // Common search input selectors (expanded list)
+  // Enhanced search input selectors with Amazon-specific ones
   const searchSelectors = [
+    // Amazon specific
+    '#twotabsearchtextbox',
+    'input[name="field-keywords"]',
+    '.nav-search-field input',
+    
+    // Generic search selectors
     'input[type="search"]',
     'input[name*="search" i]',
     'input[placeholder*="search" i]',
@@ -381,6 +477,7 @@ function performSearch(searchTerm: string) {
     '[data-testid*="search" i]',
     '[aria-label*="search" i]',
     'input[role="searchbox"]',
+    
     // E-commerce specific selectors
     'input[name="q"]',
     'input[name="query"]',
@@ -404,6 +501,7 @@ function performSearch(searchTerm: string) {
           !element.disabled &&
           element.style.display !== 'none') {
         searchInput = element;
+        console.log('Found search input with selector:', selector);
         break;
       }
     }
@@ -426,11 +524,12 @@ function performSearch(searchTerm: string) {
           input.className?.toLowerCase().includes('search'),
           input.getAttribute('aria-label')?.toLowerCase().includes('search'),
           // Check parent elements for search context
-          input.closest('.search, .searchbox, .search-form, [class*="search"]') !== null
+          input.closest('.search, .searchbox, .search-form, [class*="search"], .nav-search') !== null
         ];
         
         if (searchIndicators.some(indicator => indicator)) {
           searchInput = input;
+          console.log('Found search input via fallback method');
           break;
         }
       }
@@ -463,25 +562,24 @@ function performSearch(searchTerm: string) {
           new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
           new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }),
           new Event('focus', { bubbles: true }),
-          new Event('blur', { bubbles: true })
         ];
         
-        events.forEach(event => {
-          setTimeout(() => searchInput!.dispatchEvent(event), 50);
+        events.forEach((event, index) => {
+          setTimeout(() => searchInput!.dispatchEvent(event), index * 50);
         });
         
         // Re-focus after events
         setTimeout(() => {
           searchInput!.focus();
           searchInput!.setSelectionRange(searchTerm.length, searchTerm.length);
-        }, 200);
+        }, 300);
         
         // Try to find and trigger search
         setTimeout(() => {
           triggerSearch(searchInput!, searchTerm);
-        }, 300);
+        }, 500);
         
-      }, 100);
+      }, 200);
       
       console.log('Search performed successfully for:', searchTerm);
       
@@ -498,8 +596,14 @@ function performSearch(searchTerm: string) {
 function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
   const form = searchInput.closest('form');
   
-  // Enhanced search button selectors
+  // Enhanced search button selectors with Amazon-specific ones
   const searchButtonSelectors = [
+    // Amazon specific
+    '#nav-search-submit-button',
+    '.nav-search-submit input',
+    '.nav-search-submit button',
+    
+    // Generic search buttons
     'button[type="submit"]',
     'input[type="submit"]',
     'button[aria-label*="search" i]',
@@ -525,6 +629,7 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
       const button = form.querySelector(selector) as HTMLElement;
       if (button && button.offsetParent !== null && !button.disabled) {
         searchButton = button;
+        console.log('Found search button in form:', selector);
         break;
       }
     }
@@ -538,6 +643,7 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
         const button = inputParent.querySelector(selector) as HTMLElement;
         if (button && button.offsetParent !== null && !button.disabled) {
           searchButton = button;
+          console.log('Found search button in parent:', selector);
           break;
         }
       }
@@ -558,8 +664,9 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
             Math.pow(buttonRect.top - inputRect.top, 2)
           );
           
-          if (distance < 200) { // Within 200px
+          if (distance < 300) { // Within 300px
             searchButton = button;
+            console.log('Found search button globally:', selector);
             break;
           }
         }
@@ -595,6 +702,27 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
       cancelable: true
     });
     searchInput.dispatchEvent(enterEvent);
+    
+    // Also try keypress and keyup
+    const keypressEvent = new KeyboardEvent('keypress', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    searchInput.dispatchEvent(keypressEvent);
+    
+    const keyupEvent = new KeyboardEvent('keyup', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    searchInput.dispatchEvent(keyupEvent);
     
     // After search is triggered, wait and then look for products
     findAndClickFirstProduct(searchTerm);
@@ -843,6 +971,7 @@ window.addEventListener('message', (event) => {
       handleFrameClose(hostElement);
     }
   } else if (event.data.action === 'performSearch') {
+    console.log('Received search request for:', event.data.searchTerm);
     performSearch(event.data.searchTerm);
   }
 });
