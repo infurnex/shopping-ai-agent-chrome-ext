@@ -1,6 +1,318 @@
-// Enhanced content script with search state persistence across page navigation
+// Enhanced content script with action queue system for cross-page persistence
 let persistentIframe: HTMLIFrameElement | null = null;
 let hostElement: HTMLElement | null = null;
+
+// Action types that can be queued
+interface Action {
+  id: string;
+  type: 'search' | 'find_and_click_product' | 'navigate_to_url';
+  data: any;
+  timestamp: number;
+  retries: number;
+  maxRetries: number;
+}
+
+// Function to add action to queue
+function addActionToQueue(action: Omit<Action, 'id' | 'timestamp' | 'retries'>) {
+  const fullAction: Action = {
+    ...action,
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    timestamp: Date.now(),
+    retries: 0
+  };
+  
+  chrome.storage.local.get(['actionQueue'], (result) => {
+    const queue = result.actionQueue || [];
+    queue.push(fullAction);
+    
+    chrome.storage.local.set({ actionQueue: queue }, () => {
+      console.log('Action added to queue:', fullAction);
+    });
+  });
+}
+
+// Function to get and process action queue
+function processActionQueue() {
+  chrome.storage.local.get(['actionQueue'], (result) => {
+    const queue = result.actionQueue || [];
+    
+    if (queue.length === 0) {
+      console.log('No actions in queue');
+      return;
+    }
+    
+    console.log('Processing action queue:', queue);
+    
+    // Process actions one by one
+    const actionsToProcess = [...queue];
+    const remainingActions: Action[] = [];
+    
+    actionsToProcess.forEach(action => {
+      const currentTime = Date.now();
+      const timeDiff = currentTime - action.timestamp;
+      
+      // Skip actions older than 2 minutes
+      if (timeDiff > 120000) {
+        console.log('Action expired:', action);
+        sendActionFeedback(action, false, 'Action expired');
+        return;
+      }
+      
+      // Try to execute the action
+      const executed = executeAction(action);
+      
+      if (!executed) {
+        // If action couldn't be executed, increment retry count
+        action.retries++;
+        
+        if (action.retries < action.maxRetries) {
+          remainingActions.push(action);
+          console.log(`Action failed, will retry (${action.retries}/${action.maxRetries}):`, action);
+        } else {
+          console.log('Action failed after max retries:', action);
+          sendActionFeedback(action, false, 'Max retries exceeded');
+        }
+      } else {
+        console.log('Action executed successfully:', action);
+      }
+    });
+    
+    // Update the queue with remaining actions
+    chrome.storage.local.set({ actionQueue: remainingActions });
+  });
+}
+
+// Function to execute a specific action
+function executeAction(action: Action): boolean {
+  try {
+    switch (action.type) {
+      case 'search':
+        return executeSearchAction(action);
+      
+      case 'find_and_click_product':
+        return executeFindAndClickAction(action);
+      
+      case 'navigate_to_url':
+        return executeNavigateAction(action);
+      
+      default:
+        console.warn('Unknown action type:', action.type);
+        return false;
+    }
+  } catch (error) {
+    console.error('Error executing action:', error);
+    return false;
+  }
+}
+
+// Execute search action
+function executeSearchAction(action: Action): boolean {
+  const { searchTerm } = action.data;
+  
+  // Check if we can find a search input
+  const searchInput = findSearchInput();
+  
+  if (!searchInput) {
+    console.log('Search input not found, cannot execute search action');
+    return false;
+  }
+  
+  console.log('Executing search action for:', searchTerm);
+  
+  // Perform the search
+  performSearchDirectly(searchInput, searchTerm);
+  
+  // Add follow-up action to find and click product after search
+  addActionToQueue({
+    type: 'find_and_click_product',
+    data: { searchTerm },
+    maxRetries: 3
+  });
+  
+  return true;
+}
+
+// Execute find and click product action
+function executeFindAndClickAction(action: Action): boolean {
+  const { searchTerm } = action.data;
+  
+  // Check if we're on a search results page
+  if (!isSearchResultsPage()) {
+    console.log('Not on search results page, cannot execute find and click action');
+    return false;
+  }
+  
+  console.log('Executing find and click action for:', searchTerm);
+  
+  // Send status update
+  sendSearchStatusUpdate(searchTerm, 'searching');
+  
+  // Find and click the first product
+  setTimeout(() => {
+    findAndClickFirstProduct(searchTerm);
+  }, 1000);
+  
+  return true;
+}
+
+// Execute navigate action
+function executeNavigateAction(action: Action): boolean {
+  const { url } = action.data;
+  
+  if (!url) {
+    console.log('No URL provided for navigate action');
+    return false;
+  }
+  
+  console.log('Executing navigate action to:', url);
+  window.location.href = url;
+  return true;
+}
+
+// Function to send action feedback
+function sendActionFeedback(action: Action, success: boolean, message: string) {
+  if (action.type === 'find_and_click_product') {
+    window.postMessage({
+      action: 'productClickResult',
+      searchTerm: action.data.searchTerm,
+      success,
+      message: success ? `✅ ${message}` : `❌ ${message}`
+    }, '*');
+  }
+}
+
+// Function to find search input with comprehensive selectors
+function findSearchInput(): HTMLInputElement | null {
+  // Enhanced search input selectors with Amazon-specific ones
+  const searchSelectors = [
+    // Amazon specific
+    '#twotabsearchtextbox',
+    'input[name="field-keywords"]',
+    '.nav-search-field input',
+    
+    // Generic search selectors
+    'input[type="search"]',
+    'input[name*="search" i]',
+    'input[placeholder*="search" i]',
+    'input[id*="search" i]',
+    'input[class*="search" i]',
+    '.search-input input',
+    '.search-box input',
+    '.search-field input',
+    '#search-input',
+    '#search-box',
+    '#search',
+    '.search',
+    '[data-testid*="search" i]',
+    '[aria-label*="search" i]',
+    'input[role="searchbox"]',
+    
+    // E-commerce specific selectors
+    'input[name="q"]',
+    'input[name="query"]',
+    'input[name="keywords"]',
+    '.searchbox input',
+    '.search-form input',
+    '#searchbox',
+    '.header-search input',
+    '.site-search input'
+  ];
+  
+  // Try to find search input using various selectors
+  for (const selector of searchSelectors) {
+    const elements = document.querySelectorAll(selector) as NodeListOf<HTMLInputElement>;
+    for (const element of elements) {
+      if (element && 
+          element.type !== 'hidden' && 
+          element.offsetParent !== null &&
+          !element.disabled &&
+          element.style.display !== 'none') {
+        console.log('Found search input with selector:', selector);
+        return element;
+      }
+    }
+  }
+  
+  // Enhanced fallback: look for any visible input that might be a search box
+  const allInputs = document.querySelectorAll('input[type="text"], input:not([type])') as NodeListOf<HTMLInputElement>;
+  for (const input of allInputs) {
+    const isVisible = input.offsetParent !== null && 
+                     input.style.display !== 'none' && 
+                     !input.disabled;
+    
+    if (isVisible) {
+      const searchIndicators = [
+        input.placeholder?.toLowerCase().includes('search'),
+        input.name?.toLowerCase().includes('search'),
+        input.id?.toLowerCase().includes('search'),
+        input.className?.toLowerCase().includes('search'),
+        input.getAttribute('aria-label')?.toLowerCase().includes('search'),
+        // Check parent elements for search context
+        input.closest('.search, .searchbox, .search-form, [class*="search"], .nav-search') !== null
+      ];
+      
+      if (searchIndicators.some(indicator => indicator)) {
+        console.log('Found search input via fallback method');
+        return input;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Function to perform search directly on input
+function performSearchDirectly(searchInput: HTMLInputElement, searchTerm: string) {
+  try {
+    // Scroll to the search input to ensure it's visible
+    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // Focus the input with a slight delay
+    setTimeout(() => {
+      searchInput.focus();
+      
+      // Clear existing value
+      searchInput.value = '';
+      
+      // Set the search term using multiple methods for compatibility
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      if (nativeInputValueSetter) {
+        nativeInputValueSetter.call(searchInput, searchTerm);
+      }
+      searchInput.value = searchTerm;
+      
+      // Trigger comprehensive events
+      const events = [
+        new Event('input', { bubbles: true, cancelable: true }),
+        new Event('change', { bubbles: true, cancelable: true }),
+        new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
+        new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }),
+        new Event('focus', { bubbles: true }),
+      ];
+      
+      events.forEach((event, index) => {
+        setTimeout(() => searchInput.dispatchEvent(event), index * 50);
+      });
+      
+      // Re-focus after events
+      setTimeout(() => {
+        searchInput.focus();
+        searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
+      }, 300);
+      
+      // Try to find and trigger search
+      setTimeout(() => {
+        triggerSearch(searchInput, searchTerm);
+      }, 500);
+      
+    }, 200);
+    
+    console.log('Search performed successfully for:', searchTerm);
+    
+  } catch (error) {
+    console.error('Error performing search:', error);
+  }
+}
 
 // Function to create persistent iframe that survives page reloads
 function createPersistentFrame() {
@@ -93,69 +405,6 @@ function injectFrame() {
   
   // If no persistent frame exists, create new one
   return createPersistentFrame();
-}
-
-// Function to store search state for persistence across navigation
-function storeSearchState(searchTerm: string, timestamp: number) {
-  const searchState = {
-    searchTerm,
-    timestamp,
-    url: window.location.href,
-    domain: window.location.hostname
-  };
-  
-  chrome.storage.local.set({ 
-    pendingSearch: searchState 
-  }, () => {
-    console.log('Search state stored:', searchState);
-  });
-}
-
-// Function to retrieve and clear search state
-function retrieveSearchState(): Promise<any> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['pendingSearch'], (result) => {
-      if (result.pendingSearch) {
-        // Clear the stored state after retrieving
-        chrome.storage.local.remove(['pendingSearch']);
-        resolve(result.pendingSearch);
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-// Function to check if we should perform a pending search
-async function checkForPendingSearch() {
-  const searchState = await retrieveSearchState();
-  
-  if (searchState) {
-    const { searchTerm, timestamp, domain } = searchState;
-    const currentTime = Date.now();
-    const timeDiff = currentTime - timestamp;
-    
-    // Only proceed if:
-    // 1. The search was initiated within the last 30 seconds
-    // 2. We're on the same domain
-    // 3. The URL suggests we're on a search results page
-    if (timeDiff < 30000 && 
-        window.location.hostname === domain &&
-        isSearchResultsPage()) {
-      
-      console.log('Found pending search, looking for products:', searchTerm);
-      
-      // Send status update to chat
-      sendSearchStatusUpdate(searchTerm, 'searching');
-      
-      // Wait a bit for the page to fully load, then search for products
-      setTimeout(() => {
-        findAndClickFirstProduct(searchTerm);
-      }, 2000);
-    } else {
-      console.log('Pending search expired or invalid:', searchState);
-    }
-  }
 }
 
 // Function to check if current page is a search results page
@@ -528,8 +777,8 @@ function highlightElement(element: HTMLElement) {
 // Function to send feedback to the chat
 function sendProductClickFeedback(searchTerm: string, success: boolean, productUrl?: string) {
   const message = success 
-    ? `✅ Successfully found and clicked the first product for "${searchTerm}"${productUrl ? ` (${productUrl})` : ''}`
-    : `❌ Could not find any products for "${searchTerm}" on this page. Try refining your search term or make sure you're on a shopping website.`;
+    ? `Successfully found and clicked the first product for "${searchTerm}"${productUrl ? ` (${productUrl})` : ''}`
+    : `Could not find any products for "${searchTerm}" on this page. Try refining your search term or make sure you're on a shopping website.`;
     
   window.postMessage({
     action: 'productClickResult',
@@ -544,145 +793,17 @@ function sendProductClickFeedback(searchTerm: string, success: boolean, productU
 function performSearch(searchTerm: string) {
   console.log('Performing search for:', searchTerm);
   
-  // Store search state before performing search (in case of navigation)
-  storeSearchState(searchTerm, Date.now());
+  // Add search action to queue
+  addActionToQueue({
+    type: 'search',
+    data: { searchTerm },
+    maxRetries: 2
+  });
   
-  // Enhanced search input selectors with Amazon-specific ones
-  const searchSelectors = [
-    // Amazon specific
-    '#twotabsearchtextbox',
-    'input[name="field-keywords"]',
-    '.nav-search-field input',
-    
-    // Generic search selectors
-    'input[type="search"]',
-    'input[name*="search" i]',
-    'input[placeholder*="search" i]',
-    'input[id*="search" i]',
-    'input[class*="search" i]',
-    '.search-input input',
-    '.search-box input',
-    '.search-field input',
-    '#search-input',
-    '#search-box',
-    '#search',
-    '.search',
-    '[data-testid*="search" i]',
-    '[aria-label*="search" i]',
-    'input[role="searchbox"]',
-    
-    // E-commerce specific selectors
-    'input[name="q"]',
-    'input[name="query"]',
-    'input[name="keywords"]',
-    '.searchbox input',
-    '.search-form input',
-    '#searchbox',
-    '.header-search input',
-    '.site-search input'
-  ];
-  
-  let searchInput: HTMLInputElement | null = null;
-  
-  // Try to find search input using various selectors
-  for (const selector of searchSelectors) {
-    const elements = document.querySelectorAll(selector) as NodeListOf<HTMLInputElement>;
-    for (const element of elements) {
-      if (element && 
-          element.type !== 'hidden' && 
-          element.offsetParent !== null &&
-          !element.disabled &&
-          element.style.display !== 'none') {
-        searchInput = element;
-        console.log('Found search input with selector:', selector);
-        break;
-      }
-    }
-    if (searchInput) break;
-  }
-  
-  if (!searchInput) {
-    // Enhanced fallback: look for any visible input that might be a search box
-    const allInputs = document.querySelectorAll('input[type="text"], input:not([type])') as NodeListOf<HTMLInputElement>;
-    for (const input of allInputs) {
-      const isVisible = input.offsetParent !== null && 
-                       input.style.display !== 'none' && 
-                       !input.disabled;
-      
-      if (isVisible) {
-        const searchIndicators = [
-          input.placeholder?.toLowerCase().includes('search'),
-          input.name?.toLowerCase().includes('search'),
-          input.id?.toLowerCase().includes('search'),
-          input.className?.toLowerCase().includes('search'),
-          input.getAttribute('aria-label')?.toLowerCase().includes('search'),
-          // Check parent elements for search context
-          input.closest('.search, .searchbox, .search-form, [class*="search"], .nav-search') !== null
-        ];
-        
-        if (searchIndicators.some(indicator => indicator)) {
-          searchInput = input;
-          console.log('Found search input via fallback method');
-          break;
-        }
-      }
-    }
-  }
-  
-  if (searchInput) {
-    try {
-      // Scroll to the search input to ensure it's visible
-      searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Focus the input with a slight delay
-      setTimeout(() => {
-        searchInput!.focus();
-        
-        // Clear existing value
-        searchInput!.value = '';
-        
-        // Set the search term using multiple methods for compatibility
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-        if (nativeInputValueSetter) {
-          nativeInputValueSetter.call(searchInput, searchTerm);
-        }
-        searchInput!.value = searchTerm;
-        
-        // Trigger comprehensive events
-        const events = [
-          new Event('input', { bubbles: true, cancelable: true }),
-          new Event('change', { bubbles: true, cancelable: true }),
-          new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
-          new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }),
-          new Event('focus', { bubbles: true }),
-        ];
-        
-        events.forEach((event, index) => {
-          setTimeout(() => searchInput!.dispatchEvent(event), index * 50);
-        });
-        
-        // Re-focus after events
-        setTimeout(() => {
-          searchInput!.focus();
-          searchInput!.setSelectionRange(searchTerm.length, searchTerm.length);
-        }, 300);
-        
-        // Try to find and trigger search
-        setTimeout(() => {
-          triggerSearch(searchInput!, searchTerm);
-        }, 500);
-        
-      }, 200);
-      
-      console.log('Search performed successfully for:', searchTerm);
-      
-    } catch (error) {
-      console.error('Error performing search:', error);
-    }
-  } else {
-    console.warn('No search input found on this page');
-    tryAlternativeSearchMethods(searchTerm);
-  }
+  // Try to execute immediately
+  setTimeout(() => {
+    processActionQueue();
+  }, 100);
 }
 
 // Function to trigger search submission
@@ -773,15 +894,9 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
     console.log('Clicking search button');
     searchButton.click();
     
-    // Note: After search is triggered, the page will navigate
-    // The pending search will be handled by checkForPendingSearch() on the new page
-    
   } else if (form) {
     console.log('Submitting form');
     form.submit();
-    
-    // Note: After search is triggered, the page will navigate
-    // The pending search will be handled by checkForPendingSearch() on the new page
     
   } else {
     // Try Enter key as last resort
@@ -816,9 +931,6 @@ function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
       cancelable: true
     });
     searchInput.dispatchEvent(keyupEvent);
-    
-    // Note: After search is triggered, the page will navigate
-    // The pending search will be handled by checkForPendingSearch() on the new page
   }
 }
 
@@ -1018,7 +1130,7 @@ function setFrameVisibility(isVisible: boolean) {
   }
 }
 
-// Enhanced initialization with persistence check and pending search check
+// Enhanced initialization with action queue processing
 function initializeFrame() {
   chrome.storage.local.get(['frameVisible'], (result) => {
     const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
@@ -1047,9 +1159,9 @@ function initializeFrame() {
     }
   });
   
-  // Check for pending search after a short delay to let the page load
+  // Process action queue after a short delay to let the page load
   setTimeout(() => {
-    checkForPendingSearch();
+    processActionQueue();
   }, 1000);
 }
 
@@ -1122,6 +1234,11 @@ function ensureFrameExists() {
 // Check periodically but less frequently since we have persistence
 setInterval(ensureFrameExists, 5000);
 
+// Process action queue periodically
+setInterval(() => {
+  processActionQueue();
+}, 3000);
+
 // Enhanced mutation observer for better persistence
 const observer = new MutationObserver((mutations) => {
   let shouldCheck = false;
@@ -1188,7 +1305,10 @@ window.addEventListener('beforeunload', () => {
 // Handle page visibility changes
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    // Page became visible again, ensure frame exists
-    setTimeout(ensureFrameExists, 100);
+    // Page became visible again, ensure frame exists and process actions
+    setTimeout(() => {
+      ensureFrameExists();
+      processActionQueue();
+    }, 100);
   }
 });

@@ -209,7 +209,7 @@ const App: React.FC = () => {
       const confirmMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: `I've initiated a search for "${currentSearchTerm}" on this website. I'll search for the product and automatically click on the first result found. This may cause the page to navigate to search results.`,
+        content: `I've initiated a search for "${currentSearchTerm}" on this website. The system will automatically find and click the first product result. This process works across page navigation.`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, confirmMessage]);
@@ -378,7 +378,7 @@ const App: React.FC = () => {
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Enter product name (e.g., red tshirt)..."
+                  placeholder="Enter product name (e.g., wireless headphones)..."
                   className="search-input"
                 />
                 
