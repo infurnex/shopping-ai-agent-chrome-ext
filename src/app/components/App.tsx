@@ -9,16 +9,20 @@ import {
   Bot,
   User,
   Loader2,
-  Search
+  Search,
+  ShoppingCart,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai' | 'search';
+  type: 'user' | 'ai' | 'search' | 'system';
   content: string;
   timestamp: Date;
   image?: string;
   searchTerm?: string;
+  success?: boolean;
 }
 
 const App: React.FC = () => {
@@ -27,7 +31,7 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI assistant. You can chat with me, upload images, or use the search feature to find items on this website.',
+      content: 'Hello! I\'m your AI shopping assistant. You can chat with me, upload images, or use the search feature to find and automatically select products on this website.',
       timestamp: new Date()
     }
   ]);
@@ -49,6 +53,26 @@ const App: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Listen for product click results from content script
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.action === 'productClickResult') {
+        const resultMessage: Message = {
+          id: Date.now().toString(),
+          type: 'system',
+          content: event.data.message,
+          timestamp: new Date(),
+          success: event.data.success,
+          searchTerm: event.data.searchTerm
+        };
+        setMessages(prev => [...prev, resultMessage]);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -165,6 +189,7 @@ const App: React.FC = () => {
       searchTerm: searchValue 
     }, '*');
 
+    const currentSearchTerm = searchValue;
     setSearchValue('');
     
     // Add confirmation message
@@ -172,7 +197,34 @@ const App: React.FC = () => {
       const confirmMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: `I've initiated a search for "${searchValue}" on this website. The search should be performed in the site's search box.`,
+        content: `I've initiated a search for "${currentSearchTerm}" on this website. I'll search for the product and automatically click on the first result found.`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, confirmMessage]);
+    }, 500);
+  };
+
+  const handleClickFirstProduct = () => {
+    const clickMessage: Message = {
+      id: Date.now().toString(),
+      type: 'search',
+      content: 'Looking for the first product on this page...',
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, clickMessage]);
+    
+    // Send message to content script to find and click first product
+    window.parent.postMessage({ 
+      action: 'clickFirstProduct'
+    }, '*');
+    
+    // Add confirmation message
+    setTimeout(() => {
+      const confirmMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: 'I\'m scanning the page for the first available product and will click on it automatically.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, confirmMessage]);
@@ -194,12 +246,25 @@ const App: React.FC = () => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const getMessageIcon = (message: Message) => {
+    switch (message.type) {
+      case 'ai':
+        return <Bot size={16} />;
+      case 'search':
+        return <Search size={16} />;
+      case 'system':
+        return message.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />;
+      default:
+        return <User size={16} />;
+    }
+  };
+
   return (
     <div className={`app-container ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="frame-header">
         <div className="frame-title">
-          <Bot size={16} />
-          AI Assistant
+          <ShoppingCart size={16} />
+          Shopping Assistant
         </div>
         <div className="frame-controls">
           <button className="control-button" onClick={toggleCollapse}>
@@ -226,7 +291,7 @@ const App: React.FC = () => {
               onClick={() => setActiveTab('search')}
             >
               <Search size={16} />
-              Search
+              Auto-Shop
             </button>
           </div>
 
@@ -234,8 +299,7 @@ const App: React.FC = () => {
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className="message-avatar">
-                  {message.type === 'ai' ? <Bot size={16} /> : 
-                   message.type === 'search' ? <Search size={16} /> : <User size={16} />}
+                  {getMessageIcon(message)}
                 </div>
                 <div className="message-content">
                   {message.image && (
@@ -318,25 +382,38 @@ const App: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="input-row">
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Enter search term (e.g., red tshirt)..."
-                  className="search-input"
-                />
+              <div className="search-controls">
+                <div className="input-row">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Enter product name (e.g., red tshirt)..."
+                    className="search-input"
+                  />
+                  
+                  <button 
+                    className="search-btn"
+                    onClick={handleSearch}
+                    disabled={!searchValue.trim()}
+                  >
+                    <Search size={18} />
+                    Find
+                  </button>
+                </div>
                 
-                <button 
-                  className="search-btn"
-                  onClick={handleSearch}
-                  disabled={!searchValue.trim()}
-                >
-                  <Search size={18} />
-                  Find
-                </button>
+                <div className="product-actions">
+                  <button 
+                    className="product-click-btn"
+                    onClick={handleClickFirstProduct}
+                    title="Find and click the first product on this page"
+                  >
+                    <ShoppingCart size={18} />
+                    Click First Product
+                  </button>
+                </div>
               </div>
             )}
           </div>

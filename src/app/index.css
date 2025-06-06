@@ -253,6 +253,11 @@ html, body {
   color: white;
 }
 
+.message.system .message-avatar {
+  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
+  color: white;
+}
+
 .message-content {
   flex: 1;
   max-width: 80%;
@@ -300,6 +305,12 @@ html, body {
 
 .message.search .message-text {
   background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
+  color: white;
+  border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
+}
+
+.message.system .message-text {
+  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
   color: white;
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
@@ -502,6 +513,48 @@ html, body {
   transform: none;
 }
 
+/* Search controls container */
+.search-controls {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 1.5);
+}
+
+/* Product actions */
+.product-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.product-click-btn {
+  background: linear-gradient(135deg, var(--accent-color) 0%, var(--warning-color) 100%);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--spacing-unit) * 1);
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
+  border-radius: calc(var(--spacing-unit) * 2);
+  transition: all var(--animation-fast) ease;
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: 44px;
+}
+
+.product-click-btn:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+  background: linear-gradient(135deg, var(--warning-color) 0%, var(--accent-color) 100%);
+}
+
+.product-click-btn:active {
+  transform: scale(0.98);
+}
+
 /* Animations */
 @keyframes slideInMessage {
   from {
@@ -542,6 +595,15 @@ html, body {
   .search-btn {
     padding: 0 calc(var(--spacing-unit) * 1.5);
     font-size: 13px;
+  }
+  
+  .product-click-btn {
+    padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
+    font-size: 13px;
+  }
+  
+  .search-controls {
+    gap: calc(var(--spacing-unit) * 1);
   }
 }
 
