@@ -1,3 +1,5 @@
+import { browserAction } from './actions/index';
+
 export interface ChromeMessage {
   action: string;
   [key: string]: any;
@@ -176,17 +178,7 @@ export class MessagesHandler {
   // Handle execute action
   private handleExecuteAction(data: WindowMessage): void {
     if (data.actionData) {
-      // Import and execute browser action
-      import('./actions/index').then(({ browserAction }) => {
-        browserAction(data.actionData);
-      }).catch((error) => {
-        console.error('Error executing browser action:', error);
-        this.sendMessageToFrame({
-          action: 'actionError',
-          error: error.message,
-          actionData: data.actionData
-        });
-      });
+      browserAction(data.actionData)
     }
   }
 
