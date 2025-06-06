@@ -58,10 +58,187 @@ function injectFrame() {
       handleFrameResize(hostElement, event.data.isCollapsed);
     } else if (event.data.action === 'close') {
       handleFrameClose(hostElement);
+    } else if (event.data.action === 'performSearch') {
+      performSearch(event.data.searchTerm);
     }
   });
   
   return { hostElement, iframe };
+}
+
+// Function to perform search on the website
+function performSearch(searchTerm: string) {
+  console.log('Performing search for:', searchTerm);
+  
+  // Common search input selectors
+  const searchSelectors = [
+    'input[type="search"]',
+    'input[name*="search" i]',
+    'input[placeholder*="search" i]',
+    'input[id*="search" i]',
+    'input[class*="search" i]',
+    '.search-input input',
+    '.search-box input',
+    '#search-input',
+    '#search-box',
+    '#search',
+    '.search',
+    '[data-testid*="search" i]',
+    '[aria-label*="search" i]',
+    'input[role="searchbox"]'
+  ];
+  
+  let searchInput: HTMLInputElement | null = null;
+  
+  // Try to find search input using various selectors
+  for (const selector of searchSelectors) {
+    const element = document.querySelector(selector) as HTMLInputElement;
+    if (element && element.type !== 'hidden' && element.offsetParent !== null) {
+      searchInput = element;
+      break;
+    }
+  }
+  
+  if (!searchInput) {
+    // Fallback: look for any visible input that might be a search box
+    const allInputs = document.querySelectorAll('input[type="text"], input:not([type])') as NodeListOf<HTMLInputElement>;
+    for (const input of allInputs) {
+      if (input.offsetParent !== null && 
+          (input.placeholder?.toLowerCase().includes('search') ||
+           input.name?.toLowerCase().includes('search') ||
+           input.id?.toLowerCase().includes('search') ||
+           input.className?.toLowerCase().includes('search'))) {
+        searchInput = input;
+        break;
+      }
+    }
+  }
+  
+  if (searchInput) {
+    try {
+      // Focus the input
+      searchInput.focus();
+      
+      // Clear existing value
+      searchInput.value = '';
+      
+      // Set the search term
+      searchInput.value = searchTerm;
+      
+      // Trigger input events to ensure the website recognizes the change
+      const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+      const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+      
+      searchInput.dispatchEvent(inputEvent);
+      searchInput.dispatchEvent(changeEvent);
+      
+      // Try to find and click search button
+      const searchButtonSelectors = [
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button[aria-label*="search" i]',
+        '.search-button',
+        '.search-btn',
+        '#search-button',
+        '#search-btn',
+        '[data-testid*="search" i] button',
+        'form button',
+        '.search-form button'
+      ];
+      
+      let searchButton: HTMLElement | null = null;
+      const form = searchInput.closest('form');
+      
+      // First, try to find search button within the same form
+      if (form) {
+        for (const selector of searchButtonSelectors) {
+          const button = form.querySelector(selector) as HTMLElement;
+          if (button && button.offsetParent !== null) {
+            searchButton = button;
+            break;
+          }
+        }
+      }
+      
+      // If no button found in form, search globally
+      if (!searchButton) {
+        for (const selector of searchButtonSelectors) {
+          const button = document.querySelector(selector) as HTMLElement;
+          if (button && button.offsetParent !== null) {
+            searchButton = button;
+            break;
+          }
+        }
+      }
+      
+      // Click the search button or submit the form
+      if (searchButton) {
+        setTimeout(() => {
+          searchButton!.click();
+        }, 100);
+      } else if (form) {
+        // If no button found, try submitting the form
+        setTimeout(() => {
+          form.submit();
+        }, 100);
+      } else {
+        // As a last resort, try pressing Enter
+        setTimeout(() => {
+          const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          searchInput!.dispatchEvent(enterEvent);
+          
+          const enterUpEvent = new KeyboardEvent('keyup', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          searchInput!.dispatchEvent(enterUpEvent);
+        }, 100);
+      }
+      
+      console.log('Search performed successfully for:', searchTerm);
+      
+    } catch (error) {
+      console.error('Error performing search:', error);
+    }
+  } else {
+    console.warn('No search input found on this page');
+    
+    // Try alternative approach: look for search links or buttons that might open search
+    const searchTriggers = document.querySelectorAll('[aria-label*="search" i], [title*="search" i], .search-trigger, .search-icon');
+    if (searchTriggers.length > 0) {
+      const trigger = searchTriggers[0] as HTMLElement;
+      trigger.click();
+      
+      // Wait a bit and try to find search input again
+      setTimeout(() => {
+        const newSearchInput = document.querySelector('input[type="search"], input[placeholder*="search" i]') as HTMLInputElement;
+        if (newSearchInput) {
+          newSearchInput.focus();
+          newSearchInput.value = searchTerm;
+          
+          const inputEvent = new Event('input', { bubbles: true });
+          newSearchInput.dispatchEvent(inputEvent);
+          
+          // Try to submit
+          setTimeout(() => {
+            const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+            newSearchInput.dispatchEvent(enterEvent);
+          }, 100);
+        }
+      }, 500);
+    }
+  }
 }
 
 // Function to handle frame resizing

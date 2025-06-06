@@ -8,15 +8,17 @@ import {
   Paperclip,
   Bot,
   User,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai';
+  type: 'user' | 'ai' | 'search';
   content: string;
   timestamp: Date;
   image?: string;
+  searchTerm?: string;
 }
 
 const App: React.FC = () => {
@@ -25,17 +27,20 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI assistant. How can I help you today? Feel free to ask questions or upload images for analysis.',
+      content: 'Hello! I\'m your AI assistant. You can chat with me, upload images, or use the search feature to find items on this website.',
       timestamp: new Date()
     }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [searchValue, setSearchValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'search'>('chat');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -141,10 +146,47 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSearch = async () => {
+    if (!searchValue.trim()) return;
+
+    const searchMessage: Message = {
+      id: Date.now().toString(),
+      type: 'search',
+      content: `Searching for: "${searchValue}"`,
+      timestamp: new Date(),
+      searchTerm: searchValue
+    };
+
+    setMessages(prev => [...prev, searchMessage]);
+    
+    // Send message to content script to perform search
+    window.parent.postMessage({ 
+      action: 'performSearch', 
+      searchTerm: searchValue 
+    }, '*');
+
+    setSearchValue('');
+    
+    // Add confirmation message
+    setTimeout(() => {
+      const confirmMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: `I've initiated a search for "${searchValue}" on this website. The search should be performed in the site's search box.`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, confirmMessage]);
+    }, 500);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage();
+      if (activeTab === 'chat') {
+        handleSendMessage();
+      } else {
+        handleSearch();
+      }
     }
   };
 
@@ -171,11 +213,29 @@ const App: React.FC = () => {
       
       {!isCollapsed && (
         <div className="chat-container">
+          <div className="tab-container">
+            <button 
+              className={`tab-button ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              <Bot size={16} />
+              Chat
+            </button>
+            <button 
+              className={`tab-button ${activeTab === 'search' ? 'active' : ''}`}
+              onClick={() => setActiveTab('search')}
+            >
+              <Search size={16} />
+              Search
+            </button>
+          </div>
+
           <div className="messages-container">
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className="message-avatar">
-                  {message.type === 'ai' ? <Bot size={16} /> : <User size={16} />}
+                  {message.type === 'ai' ? <Bot size={16} /> : 
+                   message.type === 'search' ? <Search size={16} /> : <User size={16} />}
                 </div>
                 <div className="message-content">
                   {message.image && (
@@ -207,7 +267,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="input-container">
-            {selectedImage && (
+            {selectedImage && activeTab === 'chat' && (
               <div className="selected-image-preview">
                 <img src={selectedImage} alt="Selected for upload" />
                 <button 
@@ -219,43 +279,66 @@ const App: React.FC = () => {
               </div>
             )}
             
-            <div className="input-row">
-              <div className="input-actions">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  style={{ display: 'none' }}
+            {activeTab === 'chat' ? (
+              <div className="input-row">
+                <div className="input-actions">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ display: 'none' }}
+                  />
+                  <button 
+                    className="action-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Upload image"
+                  >
+                    <ImageIcon size={18} />
+                  </button>
+                </div>
+                
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Type your message..."
+                  className="message-input"
+                  rows={1}
+                  disabled={isLoading}
                 />
+                
                 <button 
-                  className="action-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Upload image"
+                  className="send-btn"
+                  onClick={handleSendMessage}
+                  disabled={(!inputValue.trim() && !selectedImage) || isLoading}
                 >
-                  <ImageIcon size={18} />
+                  <Send size={18} />
                 </button>
               </div>
-              
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
-                className="message-input"
-                rows={1}
-                disabled={isLoading}
-              />
-              
-              <button 
-                className="send-btn"
-                onClick={handleSendMessage}
-                disabled={(!inputValue.trim() && !selectedImage) || isLoading}
-              >
-                <Send size={18} />
-              </button>
-            </div>
+            ) : (
+              <div className="input-row">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Enter search term (e.g., red tshirt)..."
+                  className="search-input"
+                />
+                
+                <button 
+                  className="search-btn"
+                  onClick={handleSearch}
+                  disabled={!searchValue.trim()}
+                >
+                  <Search size={18} />
+                  Find
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
