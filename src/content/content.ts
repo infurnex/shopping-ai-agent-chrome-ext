@@ -31,7 +31,7 @@ function addActionToQueue(action: Omit<Action, 'id' | 'timestamp' | 'retries'>) 
   });
 }
 
-// Function to get and process action queue
+// Function to get and process action queue sequentially
 function processActionQueue() {
   chrome.storage.local.get(['actionQueue'], (result) => {
     const queue = result.actionQueue || [];
@@ -43,42 +43,71 @@ function processActionQueue() {
     
     console.log('Processing action queue:', queue);
     
-    // Process actions one by one
-    const actionsToProcess = [...queue];
-    const remainingActions: Action[] = [];
+    // Process only the first action in the queue
+    const action = queue[0]; // Get first action
+    const remainingQueue = queue.slice(1); // Remove first action from queue
     
-    actionsToProcess.forEach(action => {
-      const currentTime = Date.now();
-      const timeDiff = currentTime - action.timestamp;
+    const currentTime = Date.now();
+    const timeDiff = currentTime - action.timestamp;
+    
+    // Skip actions older than 2 minutes
+    if (timeDiff > 120000) {
+      console.log('Action expired:', action);
+      sendActionFeedback(action, false, 'Action expired');
       
-      // Skip actions older than 2 minutes
-      if (timeDiff > 120000) {
-        console.log('Action expired:', action);
-        sendActionFeedback(action, false, 'Action expired');
-        return;
-      }
-      
-      // Try to execute the action
-      const executed = executeAction(action);
-      
-      if (!executed) {
-        // If action couldn't be executed, increment retry count
-        action.retries++;
-        
-        if (action.retries < action.maxRetries) {
-          remainingActions.push(action);
-          console.log(`Action failed, will retry (${action.retries}/${action.maxRetries}):`, action);
-        } else {
-          console.log('Action failed after max retries:', action);
-          sendActionFeedback(action, false, 'Max retries exceeded');
+      // Update queue without the expired action and continue processing
+      chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
+        // Process next action if any
+        if (remainingQueue.length > 0) {
+          setTimeout(() => processActionQueue(), 100);
         }
-      } else {
-        console.log('Action executed successfully:', action);
-      }
-    });
+      });
+      return;
+    }
     
-    // Update the queue with remaining actions
-    chrome.storage.local.set({ actionQueue: remainingActions });
+    // Try to execute the action
+    const executed = executeAction(action);
+    
+    if (!executed) {
+      // If action couldn't be executed, increment retry count
+      action.retries++;
+      
+      if (action.retries < action.maxRetries) {
+        // Put the action back at the beginning of the queue for retry
+        const retryQueue = [action, ...remainingQueue];
+        chrome.storage.local.set({ actionQueue: retryQueue }, () => {
+          console.log(`Action failed, will retry (${action.retries}/${action.maxRetries}):`, action);
+          // Retry after a delay
+          setTimeout(() => processActionQueue(), 2000);
+        });
+      } else {
+        // Max retries exceeded, remove action and continue
+        console.log('Action failed after max retries:', action);
+        sendActionFeedback(action, false, 'Max retries exceeded');
+        
+        chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
+          // Process next action if any
+          if (remainingQueue.length > 0) {
+            setTimeout(() => processActionQueue(), 100);
+          }
+        });
+      }
+    } else {
+      // Action executed successfully, remove it from queue
+      console.log('Action executed successfully:', action);
+      chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
+        // For actions that might cause page navigation, don't immediately process next action
+        // The new page load will trigger processActionQueue again
+        if (action.type === 'search' || action.type === 'navigate_to_url') {
+          console.log('Action may cause page navigation, waiting for page load to process next action');
+        } else {
+          // For other actions, process next action after a short delay
+          if (remainingQueue.length > 0) {
+            setTimeout(() => processActionQueue(), 500);
+          }
+        }
+      });
+    }
   });
 }
 
@@ -1234,10 +1263,10 @@ function ensureFrameExists() {
 // Check periodically but less frequently since we have persistence
 setInterval(ensureFrameExists, 5000);
 
-// Process action queue periodically
+// Process action queue periodically (but less frequently to avoid conflicts)
 setInterval(() => {
   processActionQueue();
-}, 3000);
+}, 5000);
 
 // Enhanced mutation observer for better persistence
 const observer = new MutationObserver((mutations) => {
