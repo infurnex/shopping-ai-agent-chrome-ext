@@ -5,19 +5,20 @@ function injectFrame() {
   hostElement.id = 'react-frame-host';
   document.body.appendChild(hostElement);
   
-  // Apply styles to the host element
+  // Apply initial styles to the host element
   Object.assign(hostElement.style, {
     position: 'fixed',
     bottom: '20px',
     left: '20px',
-    width: '320px',
-    height: '240px',
+    width: '380px', // Increased width for better chat experience
+    height: '500px', // Increased height for better chat experience
     zIndex: '2147483647', // Max z-index
     border: 'none',
     margin: '0',
     padding: '0',
     overflow: 'hidden',
     pointerEvents: 'auto',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', // Smooth transitions
   });
   
   // Create shadow DOM
@@ -36,9 +37,10 @@ function injectFrame() {
     width: '100%',
     height: '100%',
     border: 'none',
-    borderRadius: '12px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    borderRadius: '16px',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
     background: 'transparent',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
   });
   
   // Set iframe source to the extension's frame.html
@@ -50,7 +52,94 @@ function injectFrame() {
   // Add drag functionality
   enableDragging(hostElement);
   
+  // Listen for resize messages from the React app
+  window.addEventListener('message', (event) => {
+    if (event.data.action === 'resize') {
+      handleFrameResize(hostElement, event.data.isCollapsed);
+    } else if (event.data.action === 'close') {
+      handleFrameClose(hostElement);
+    }
+  });
+  
   return { hostElement, iframe };
+}
+
+// Function to handle frame resizing
+function handleFrameResize(hostElement: HTMLElement, isCollapsed: boolean) {
+  if (isCollapsed) {
+    // Collapsed state - just show header
+    hostElement.style.width = '320px';
+    hostElement.style.height = '48px';
+  } else {
+    // Expanded state - full chat window
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Responsive sizing based on viewport
+    let width = '380px';
+    let height = '500px';
+    
+    // Adjust for smaller screens
+    if (viewportWidth < 768) {
+      width = Math.min(viewportWidth - 40, 350) + 'px';
+      height = Math.min(viewportHeight - 100, 450) + 'px';
+    } else if (viewportWidth < 1024) {
+      width = '360px';
+      height = '480px';
+    }
+    
+    hostElement.style.width = width;
+    hostElement.style.height = height;
+    
+    // Ensure frame stays within viewport bounds after resize
+    ensureFrameInBounds(hostElement);
+  }
+}
+
+// Function to handle frame closing
+function handleFrameClose(hostElement: HTMLElement) {
+  // Animate out and remove
+  hostElement.style.transform = 'translateY(100%) scale(0.95)';
+  hostElement.style.opacity = '0';
+  
+  setTimeout(() => {
+    if (hostElement.parentNode) {
+      hostElement.parentNode.removeChild(hostElement);
+    }
+    // Update storage to hide frame
+    chrome.storage.local.set({ frameVisible: false });
+  }, 300);
+}
+
+// Function to ensure frame stays within viewport bounds
+function ensureFrameInBounds(hostElement: HTMLElement) {
+  const rect = hostElement.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  let newLeft = parseInt(hostElement.style.left, 10) || 20;
+  let newBottom = parseInt(hostElement.style.bottom, 10) || 20;
+  
+  // Calculate top position from bottom
+  const newTop = viewportHeight - newBottom - rect.height;
+  
+  // Ensure frame doesn't go outside viewport
+  if (rect.right > viewportWidth) {
+    newLeft = viewportWidth - rect.width - 20;
+  }
+  if (newLeft < 20) {
+    newLeft = 20;
+  }
+  if (newTop < 20) {
+    newBottom = viewportHeight - rect.height - 20;
+  }
+  if (newBottom < 20) {
+    newBottom = 20;
+  }
+  
+  hostElement.style.left = `${newLeft}px`;
+  hostElement.style.bottom = `${newBottom}px`;
+  hostElement.style.top = 'auto'; // Reset top to use bottom positioning
 }
 
 // Function to enable dragging
@@ -65,10 +154,11 @@ function enableDragging(element: HTMLElement) {
     top: '0',
     left: '0',
     width: '100%',
-    height: '30px',
+    height: '48px', // Height of the header
     cursor: 'move',
-    zIndex: '2147483646', // One less than the max
+    zIndex: '2147483646',
     backgroundColor: 'transparent',
+    borderRadius: '16px 16px 0 0',
   });
   
   element.appendChild(dragHandle);
@@ -76,9 +166,14 @@ function enableDragging(element: HTMLElement) {
   // Mouse events for dragging
   dragHandle.addEventListener('mousedown', (e) => {
     isDragging = true;
-    offsetX = e.clientX - element.offsetLeft;
-    offsetY = e.clientY - element.offsetTop;
+    const rect = element.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
     e.preventDefault();
+    
+    // Add dragging class for visual feedback
+    element.style.cursor = 'grabbing';
+    dragHandle.style.cursor = 'grabbing';
   });
   
   document.addEventListener('mousemove', (e) => {
@@ -91,12 +186,26 @@ function enableDragging(element: HTMLElement) {
     const maxX = window.innerWidth - element.offsetWidth;
     const maxY = window.innerHeight - element.offsetHeight;
     
-    element.style.left = `${Math.max(0, Math.min(newLeft, maxX))}px`;
-    element.style.top = `${Math.max(0, Math.min(newTop, maxY))}px`;
+    const constrainedLeft = Math.max(0, Math.min(newLeft, maxX));
+    const constrainedTop = Math.max(0, Math.min(newTop, maxY));
+    
+    element.style.left = `${constrainedLeft}px`;
+    element.style.top = `${constrainedTop}px`;
+    element.style.bottom = 'auto'; // Use top positioning while dragging
   });
   
   document.addEventListener('mouseup', () => {
-    isDragging = false;
+    if (isDragging) {
+      isDragging = false;
+      element.style.cursor = 'auto';
+      dragHandle.style.cursor = 'move';
+      
+      // Convert back to bottom positioning for consistency
+      const rect = element.getBoundingClientRect();
+      const bottomPosition = window.innerHeight - rect.bottom;
+      element.style.bottom = `${bottomPosition}px`;
+      element.style.top = 'auto';
+    }
   });
 }
 
@@ -104,53 +213,108 @@ function enableDragging(element: HTMLElement) {
 function setFrameVisibility(isVisible: boolean) {
   const hostElement = document.getElementById('react-frame-host');
   if (hostElement) {
-    hostElement.style.display = isVisible ? 'block' : 'none';
+    if (isVisible) {
+      hostElement.style.display = 'block';
+      // Animate in
+      hostElement.style.transform = 'translateY(0) scale(1)';
+      hostElement.style.opacity = '1';
+    } else {
+      // Animate out
+      hostElement.style.transform = 'translateY(100%) scale(0.95)';
+      hostElement.style.opacity = '0';
+      setTimeout(() => {
+        hostElement.style.display = 'none';
+      }, 300);
+    }
   }
 }
 
-// Check saved visibility state
+// Check saved visibility state and create frame
 chrome.storage.local.get(['frameVisible'], (result) => {
   // Default to visible if setting doesn't exist
   const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
   
-  // Create the frame
-  const { hostElement } = injectFrame();
-  
-  // Apply initial visibility
-  if (!isVisible) {
-    hostElement.style.display = 'none';
+  if (isVisible) {
+    // Create the frame
+    const { hostElement } = injectFrame();
+    
+    // Add entrance animation
+    hostElement.style.transform = 'translateY(100%) scale(0.95)';
+    hostElement.style.opacity = '0';
+    
+    // Trigger animation after a brief delay
+    setTimeout(() => {
+      hostElement.style.transform = 'translateY(0) scale(1)';
+      hostElement.style.opacity = '1';
+    }, 100);
   }
 });
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'toggleFrameVisibility') {
-    setFrameVisibility(message.isVisible);
+    if (message.isVisible) {
+      // Create frame if it doesn't exist
+      const existingFrame = document.getElementById('react-frame-host');
+      if (!existingFrame) {
+        const { hostElement } = injectFrame();
+        // Add entrance animation
+        hostElement.style.transform = 'translateY(100%) scale(0.95)';
+        hostElement.style.opacity = '0';
+        setTimeout(() => {
+          hostElement.style.transform = 'translateY(0) scale(1)';
+          hostElement.style.opacity = '1';
+        }, 100);
+      } else {
+        setFrameVisibility(true);
+      }
+    } else {
+      setFrameVisibility(false);
+    }
   }
   return true;
 });
 
 // Ensure frame stays in the DOM even if page manipulates DOM
 function ensureFrameExists() {
-  const hostElement = document.getElementById('react-frame-host');
-  if (!hostElement || !document.body.contains(hostElement)) {
-    // Frame was removed, re-inject it
-    chrome.storage.local.get(['frameVisible'], (result) => {
-      const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
-      const { hostElement } = injectFrame();
-      if (!isVisible) {
-        hostElement.style.display = 'none';
+  chrome.storage.local.get(['frameVisible'], (result) => {
+    const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
+    
+    if (isVisible) {
+      const hostElement = document.getElementById('react-frame-host');
+      if (!hostElement || !document.body.contains(hostElement)) {
+        // Frame was removed, re-inject it
+        const { hostElement: newHostElement } = injectFrame();
+        // No animation for re-injection to avoid jarring experience
+        newHostElement.style.transform = 'translateY(0) scale(1)';
+        newHostElement.style.opacity = '1';
       }
-    });
-  }
+    }
+  });
 }
 
 // Check periodically if frame exists and re-inject if needed
-setInterval(ensureFrameExists, 1000);
+setInterval(ensureFrameExists, 2000);
 
-// Re-inject frame on DOM content changes
-const observer = new MutationObserver(() => {
-  ensureFrameExists();
+// Re-inject frame on significant DOM changes
+const observer = new MutationObserver((mutations) => {
+  let shouldCheck = false;
+  
+  mutations.forEach((mutation) => {
+    if (mutation.type === 'childList') {
+      // Check if our frame was removed
+      mutation.removedNodes.forEach((node) => {
+        if (node instanceof Element && 
+            (node.id === 'react-frame-host' || node.querySelector('#react-frame-host'))) {
+          shouldCheck = true;
+        }
+      });
+    }
+  });
+  
+  if (shouldCheck) {
+    setTimeout(ensureFrameExists, 100);
+  }
 });
 
 // Start observing
@@ -159,17 +323,32 @@ observer.observe(document.body, {
   subtree: true
 });
 
-// Handle window resize to keep frame in view
+// Handle window resize to keep frame in view and adjust dimensions
 window.addEventListener('resize', () => {
   const hostElement = document.getElementById('react-frame-host');
   if (hostElement) {
-    const maxX = window.innerWidth - hostElement.offsetWidth;
-    const maxY = window.innerHeight - hostElement.offsetHeight;
+    // Ensure frame stays in bounds
+    ensureFrameInBounds(hostElement);
     
-    const currentLeft = parseInt(hostElement.style.left, 10) || 20;
-    const currentTop = parseInt(hostElement.style.top, 10) || 20;
-    
-    hostElement.style.left = `${Math.min(currentLeft, maxX)}px`;
-    hostElement.style.bottom = `${Math.min(currentTop, maxY)}px`;
+    // Check if frame is collapsed and adjust accordingly
+    const isCollapsed = hostElement.style.height === '48px';
+    if (!isCollapsed) {
+      // Re-apply responsive sizing for expanded state
+      handleFrameResize(hostElement, false);
+    }
   }
+});
+
+// Handle orientation change on mobile devices
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    const hostElement = document.getElementById('react-frame-host');
+    if (hostElement) {
+      ensureFrameInBounds(hostElement);
+      const isCollapsed = hostElement.style.height === '48px';
+      if (!isCollapsed) {
+        handleFrameResize(hostElement, false);
+      }
+    }
+  }, 500); // Delay to allow orientation change to complete
 });
