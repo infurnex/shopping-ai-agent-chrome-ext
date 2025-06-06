@@ -253,6 +253,11 @@ html, body {
   color: white;
 }
 
+.message.system .message-avatar {
+  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
+  color: white;
+}
+
 .message-content {
   flex: 1;
   max-width: 80%;
@@ -300,6 +305,12 @@ html, body {
 
 .message.search .message-text {
   background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
+  color: white;
+  border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
+}
+
+.message.system .message-text {
+  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
   color: white;
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
