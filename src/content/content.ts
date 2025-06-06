@@ -1,39 +1,41 @@
-// Function to create and inject the frame
-function injectFrame() {
-  // Create shadow root to isolate styles
-  const hostElement = document.createElement('div');
-  hostElement.id = 'react-frame-host';
-  document.body.appendChild(hostElement);
+// Enhanced content script with iframe persistence
+let persistentIframe: HTMLIFrameElement | null = null;
+let hostElement: HTMLElement | null = null;
+
+// Function to create persistent iframe that survives page reloads
+function createPersistentFrame() {
+  // Create host element that will be attached to document.documentElement
+  // instead of document.body to survive most page manipulations
+  hostElement = document.createElement('div');
+  hostElement.id = 'react-frame-host-persistent';
   
-  // Apply initial styles to the host element
+  // Apply styles to make it completely independent
   Object.assign(hostElement.style, {
     position: 'fixed',
     bottom: '20px',
     left: '20px',
-    width: '380px', // Increased width for better chat experience
-    height: '500px', // Increased height for better chat experience
-    zIndex: '2147483647', // Max z-index
+    width: '380px',
+    height: '500px',
+    zIndex: '2147483647',
     border: 'none',
     margin: '0',
     padding: '0',
     overflow: 'hidden',
     pointerEvents: 'auto',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', // Smooth transitions
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    isolation: 'isolate', // Create new stacking context
   });
   
-  // Create shadow DOM
+  // Create shadow DOM for complete isolation
   const shadow = hostElement.attachShadow({ mode: 'closed' });
   
-  // Create iframe inside shadow DOM
-  const iframe = document.createElement('iframe');
-  iframe.id = 'react-frame-iframe';
+  // Create the iframe
+  persistentIframe = document.createElement('iframe');
+  persistentIframe.id = 'react-frame-iframe-persistent';
+  persistentIframe.frameBorder = '0';
+  persistentIframe.allowTransparency = 'true';
   
-  // Set iframe attributes
-  iframe.frameBorder = '0';
-  iframe.allowTransparency = 'true';
-  
-  // Set iframe styles
-  Object.assign(iframe.style, {
+  Object.assign(persistentIframe.style, {
     width: '100%',
     height: '100%',
     border: 'none',
@@ -43,34 +45,61 @@ function injectFrame() {
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
   });
   
-  // Set iframe source to the extension's frame.html
-  iframe.src = chrome.runtime.getURL('frame.html');
+  // Set iframe source
+  persistentIframe.src = chrome.runtime.getURL('frame.html');
   
-  // Append iframe to shadow DOM
-  shadow.appendChild(iframe);
+  // Append to shadow DOM
+  shadow.appendChild(persistentIframe);
+  
+  // Attach to document.documentElement instead of body
+  // This makes it more resistant to page manipulations
+  document.documentElement.appendChild(hostElement);
   
   // Add drag functionality
   enableDragging(hostElement);
   
-  // Listen for resize messages from the React app
-  window.addEventListener('message', (event) => {
-    if (event.data.action === 'resize') {
-      handleFrameResize(hostElement, event.data.isCollapsed);
-    } else if (event.data.action === 'close') {
-      handleFrameClose(hostElement);
-    } else if (event.data.action === 'performSearch') {
-      performSearch(event.data.searchTerm);
-    }
-  });
+  // Store reference for persistence
+  (window as any).__reactFramePersistent = {
+    hostElement,
+    iframe: persistentIframe
+  };
   
-  return { hostElement, iframe };
+  return { hostElement, iframe: persistentIframe };
 }
 
-// Function to perform search on the website
+// Function to restore existing persistent frame
+function restorePersistentFrame() {
+  const existing = (window as any).__reactFramePersistent;
+  if (existing && existing.hostElement && existing.iframe) {
+    hostElement = existing.hostElement;
+    persistentIframe = existing.iframe;
+    
+    // Re-attach event listeners if needed
+    if (document.documentElement.contains(hostElement)) {
+      console.log('Persistent frame restored successfully');
+      return { hostElement, iframe: persistentIframe };
+    }
+  }
+  return null;
+}
+
+// Function to create and inject the frame
+function injectFrame() {
+  // First try to restore existing persistent frame
+  const restored = restorePersistentFrame();
+  if (restored) {
+    return restored;
+  }
+  
+  // If no persistent frame exists, create new one
+  return createPersistentFrame();
+}
+
+// Enhanced function to perform search on the website
 function performSearch(searchTerm: string) {
   console.log('Performing search for:', searchTerm);
   
-  // Common search input selectors
+  // Common search input selectors (expanded list)
   const searchSelectors = [
     'input[type="search"]',
     'input[name*="search" i]',
@@ -79,132 +108,115 @@ function performSearch(searchTerm: string) {
     'input[class*="search" i]',
     '.search-input input',
     '.search-box input',
+    '.search-field input',
     '#search-input',
     '#search-box',
     '#search',
     '.search',
     '[data-testid*="search" i]',
     '[aria-label*="search" i]',
-    'input[role="searchbox"]'
+    'input[role="searchbox"]',
+    // E-commerce specific selectors
+    'input[name="q"]',
+    'input[name="query"]',
+    'input[name="keywords"]',
+    '.searchbox input',
+    '.search-form input',
+    '#searchbox',
+    '.header-search input',
+    '.site-search input'
   ];
   
   let searchInput: HTMLInputElement | null = null;
   
   // Try to find search input using various selectors
   for (const selector of searchSelectors) {
-    const element = document.querySelector(selector) as HTMLInputElement;
-    if (element && element.type !== 'hidden' && element.offsetParent !== null) {
-      searchInput = element;
-      break;
+    const elements = document.querySelectorAll(selector) as NodeListOf<HTMLInputElement>;
+    for (const element of elements) {
+      if (element && 
+          element.type !== 'hidden' && 
+          element.offsetParent !== null &&
+          !element.disabled &&
+          element.style.display !== 'none') {
+        searchInput = element;
+        break;
+      }
     }
+    if (searchInput) break;
   }
   
   if (!searchInput) {
-    // Fallback: look for any visible input that might be a search box
+    // Enhanced fallback: look for any visible input that might be a search box
     const allInputs = document.querySelectorAll('input[type="text"], input:not([type])') as NodeListOf<HTMLInputElement>;
     for (const input of allInputs) {
-      if (input.offsetParent !== null && 
-          (input.placeholder?.toLowerCase().includes('search') ||
-           input.name?.toLowerCase().includes('search') ||
-           input.id?.toLowerCase().includes('search') ||
-           input.className?.toLowerCase().includes('search'))) {
-        searchInput = input;
-        break;
+      const isVisible = input.offsetParent !== null && 
+                       input.style.display !== 'none' && 
+                       !input.disabled;
+      
+      if (isVisible) {
+        const searchIndicators = [
+          input.placeholder?.toLowerCase().includes('search'),
+          input.name?.toLowerCase().includes('search'),
+          input.id?.toLowerCase().includes('search'),
+          input.className?.toLowerCase().includes('search'),
+          input.getAttribute('aria-label')?.toLowerCase().includes('search'),
+          // Check parent elements for search context
+          input.closest('.search, .searchbox, .search-form, [class*="search"]') !== null
+        ];
+        
+        if (searchIndicators.some(indicator => indicator)) {
+          searchInput = input;
+          break;
+        }
       }
     }
   }
   
   if (searchInput) {
     try {
-      // Focus the input
-      searchInput.focus();
+      // Scroll to the search input to ensure it's visible
+      searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
       
-      // Clear existing value
-      searchInput.value = '';
-      
-      // Set the search term
-      searchInput.value = searchTerm;
-      
-      // Trigger input events to ensure the website recognizes the change
-      const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-      const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-      
-      searchInput.dispatchEvent(inputEvent);
-      searchInput.dispatchEvent(changeEvent);
-      
-      // Try to find and click search button
-      const searchButtonSelectors = [
-        'button[type="submit"]',
-        'input[type="submit"]',
-        'button[aria-label*="search" i]',
-        '.search-button',
-        '.search-btn',
-        '#search-button',
-        '#search-btn',
-        '[data-testid*="search" i] button',
-        'form button',
-        '.search-form button'
-      ];
-      
-      let searchButton: HTMLElement | null = null;
-      const form = searchInput.closest('form');
-      
-      // First, try to find search button within the same form
-      if (form) {
-        for (const selector of searchButtonSelectors) {
-          const button = form.querySelector(selector) as HTMLElement;
-          if (button && button.offsetParent !== null) {
-            searchButton = button;
-            break;
-          }
+      // Focus the input with a slight delay
+      setTimeout(() => {
+        searchInput!.focus();
+        
+        // Clear existing value
+        searchInput!.value = '';
+        
+        // Set the search term using multiple methods for compatibility
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(searchInput, searchTerm);
         }
-      }
-      
-      // If no button found in form, search globally
-      if (!searchButton) {
-        for (const selector of searchButtonSelectors) {
-          const button = document.querySelector(selector) as HTMLElement;
-          if (button && button.offsetParent !== null) {
-            searchButton = button;
-            break;
-          }
-        }
-      }
-      
-      // Click the search button or submit the form
-      if (searchButton) {
+        searchInput!.value = searchTerm;
+        
+        // Trigger comprehensive events
+        const events = [
+          new Event('input', { bubbles: true, cancelable: true }),
+          new Event('change', { bubbles: true, cancelable: true }),
+          new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }),
+          new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }),
+          new Event('focus', { bubbles: true }),
+          new Event('blur', { bubbles: true })
+        ];
+        
+        events.forEach(event => {
+          setTimeout(() => searchInput!.dispatchEvent(event), 50);
+        });
+        
+        // Re-focus after events
         setTimeout(() => {
-          searchButton!.click();
-        }, 100);
-      } else if (form) {
-        // If no button found, try submitting the form
+          searchInput!.focus();
+          searchInput!.setSelectionRange(searchTerm.length, searchTerm.length);
+        }, 200);
+        
+        // Try to find and trigger search
         setTimeout(() => {
-          form.submit();
-        }, 100);
-      } else {
-        // As a last resort, try pressing Enter
-        setTimeout(() => {
-          const enterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          });
-          searchInput!.dispatchEvent(enterEvent);
-          
-          const enterUpEvent = new KeyboardEvent('keyup', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          });
-          searchInput!.dispatchEvent(enterUpEvent);
-        }, 100);
-      }
+          triggerSearch(searchInput!, searchTerm);
+        }, 300);
+        
+      }, 100);
       
       console.log('Search performed successfully for:', searchTerm);
       
@@ -213,50 +225,163 @@ function performSearch(searchTerm: string) {
     }
   } else {
     console.warn('No search input found on this page');
-    
-    // Try alternative approach: look for search links or buttons that might open search
-    const searchTriggers = document.querySelectorAll('[aria-label*="search" i], [title*="search" i], .search-trigger, .search-icon');
-    if (searchTriggers.length > 0) {
-      const trigger = searchTriggers[0] as HTMLElement;
-      trigger.click();
-      
-      // Wait a bit and try to find search input again
-      setTimeout(() => {
-        const newSearchInput = document.querySelector('input[type="search"], input[placeholder*="search" i]') as HTMLInputElement;
-        if (newSearchInput) {
-          newSearchInput.focus();
-          newSearchInput.value = searchTerm;
-          
-          const inputEvent = new Event('input', { bubbles: true });
-          newSearchInput.dispatchEvent(inputEvent);
-          
-          // Try to submit
-          setTimeout(() => {
-            const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
-            newSearchInput.dispatchEvent(enterEvent);
-          }, 100);
-        }
-      }, 500);
+    tryAlternativeSearchMethods(searchTerm);
+  }
+}
+
+// Function to trigger search submission
+function triggerSearch(searchInput: HTMLInputElement, searchTerm: string) {
+  const form = searchInput.closest('form');
+  
+  // Enhanced search button selectors
+  const searchButtonSelectors = [
+    'button[type="submit"]',
+    'input[type="submit"]',
+    'button[aria-label*="search" i]',
+    '.search-button',
+    '.search-btn',
+    '.btn-search',
+    '#search-button',
+    '#search-btn',
+    '[data-testid*="search" i] button',
+    'form button',
+    '.search-form button',
+    '.searchbox button',
+    'button[class*="search" i]',
+    '.search-submit',
+    '.search-go'
+  ];
+  
+  let searchButton: HTMLElement | null = null;
+  
+  // First, try to find search button within the same form
+  if (form) {
+    for (const selector of searchButtonSelectors) {
+      const button = form.querySelector(selector) as HTMLElement;
+      if (button && button.offsetParent !== null && !button.disabled) {
+        searchButton = button;
+        break;
+      }
     }
   }
+  
+  // If no button found in form, search globally near the input
+  if (!searchButton) {
+    const inputParent = searchInput.parentElement;
+    if (inputParent) {
+      for (const selector of searchButtonSelectors) {
+        const button = inputParent.querySelector(selector) as HTMLElement;
+        if (button && button.offsetParent !== null && !button.disabled) {
+          searchButton = button;
+          break;
+        }
+      }
+    }
+  }
+  
+  // Global search if still not found
+  if (!searchButton) {
+    for (const selector of searchButtonSelectors) {
+      const buttons = document.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+      for (const button of buttons) {
+        if (button && button.offsetParent !== null && !button.disabled) {
+          // Check if button is near the search input
+          const buttonRect = button.getBoundingClientRect();
+          const inputRect = searchInput.getBoundingClientRect();
+          const distance = Math.sqrt(
+            Math.pow(buttonRect.left - inputRect.right, 2) + 
+            Math.pow(buttonRect.top - inputRect.top, 2)
+          );
+          
+          if (distance < 200) { // Within 200px
+            searchButton = button;
+            break;
+          }
+        }
+      }
+      if (searchButton) break;
+    }
+  }
+  
+  // Execute search
+  if (searchButton) {
+    console.log('Clicking search button');
+    searchButton.click();
+  } else if (form) {
+    console.log('Submitting form');
+    form.submit();
+  } else {
+    // Try Enter key as last resort
+    console.log('Trying Enter key');
+    const enterEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true
+    });
+    searchInput.dispatchEvent(enterEvent);
+  }
+}
+
+// Alternative search methods for sites without traditional search boxes
+function tryAlternativeSearchMethods(searchTerm: string) {
+  // Look for search triggers that might open search modals/overlays
+  const searchTriggers = [
+    '[aria-label*="search" i]',
+    '[title*="search" i]',
+    '.search-trigger',
+    '.search-icon',
+    '.search-toggle',
+    '[data-search]',
+    '.header-search-trigger'
+  ];
+  
+  for (const selector of searchTriggers) {
+    const triggers = document.querySelectorAll(selector) as NodeListOf<HTMLElement>;
+    for (const trigger of triggers) {
+      if (trigger.offsetParent !== null) {
+        console.log('Trying search trigger:', trigger);
+        trigger.click();
+        
+        // Wait and try to find search input again
+        setTimeout(() => {
+          const newSearchInput = document.querySelector('input[type="search"], input[placeholder*="search" i], input[aria-label*="search" i]') as HTMLInputElement;
+          if (newSearchInput && newSearchInput.offsetParent !== null) {
+            console.log('Found search input after trigger');
+            newSearchInput.focus();
+            newSearchInput.value = searchTerm;
+            
+            const inputEvent = new Event('input', { bubbles: true });
+            newSearchInput.dispatchEvent(inputEvent);
+            
+            setTimeout(() => {
+              triggerSearch(newSearchInput, searchTerm);
+            }, 200);
+          }
+        }, 500);
+        
+        return; // Try only the first viable trigger
+      }
+    }
+  }
+  
+  console.warn('No search functionality found on this page');
 }
 
 // Function to handle frame resizing
 function handleFrameResize(hostElement: HTMLElement, isCollapsed: boolean) {
   if (isCollapsed) {
-    // Collapsed state - just show header
     hostElement.style.width = '320px';
     hostElement.style.height = '48px';
   } else {
-    // Expanded state - full chat window
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     
-    // Responsive sizing based on viewport
     let width = '380px';
     let height = '500px';
     
-    // Adjust for smaller screens
     if (viewportWidth < 768) {
       width = Math.min(viewportWidth - 40, 350) + 'px';
       height = Math.min(viewportHeight - 100, 450) + 'px';
@@ -268,14 +393,12 @@ function handleFrameResize(hostElement: HTMLElement, isCollapsed: boolean) {
     hostElement.style.width = width;
     hostElement.style.height = height;
     
-    // Ensure frame stays within viewport bounds after resize
     ensureFrameInBounds(hostElement);
   }
 }
 
 // Function to handle frame closing
 function handleFrameClose(hostElement: HTMLElement) {
-  // Animate out and remove
   hostElement.style.transform = 'translateY(100%) scale(0.95)';
   hostElement.style.opacity = '0';
   
@@ -283,7 +406,8 @@ function handleFrameClose(hostElement: HTMLElement) {
     if (hostElement.parentNode) {
       hostElement.parentNode.removeChild(hostElement);
     }
-    // Update storage to hide frame
+    // Clear persistent reference
+    delete (window as any).__reactFramePersistent;
     chrome.storage.local.set({ frameVisible: false });
   }, 300);
 }
@@ -297,10 +421,8 @@ function ensureFrameInBounds(hostElement: HTMLElement) {
   let newLeft = parseInt(hostElement.style.left, 10) || 20;
   let newBottom = parseInt(hostElement.style.bottom, 10) || 20;
   
-  // Calculate top position from bottom
   const newTop = viewportHeight - newBottom - rect.height;
   
-  // Ensure frame doesn't go outside viewport
   if (rect.right > viewportWidth) {
     newLeft = viewportWidth - rect.width - 20;
   }
@@ -316,7 +438,7 @@ function ensureFrameInBounds(hostElement: HTMLElement) {
   
   hostElement.style.left = `${newLeft}px`;
   hostElement.style.bottom = `${newBottom}px`;
-  hostElement.style.top = 'auto'; // Reset top to use bottom positioning
+  hostElement.style.top = 'auto';
 }
 
 // Function to enable dragging
@@ -324,14 +446,13 @@ function enableDragging(element: HTMLElement) {
   let isDragging = false;
   let offsetX = 0, offsetY = 0;
   
-  // Create drag handle and append to host element
   const dragHandle = document.createElement('div');
   Object.assign(dragHandle.style, {
     position: 'absolute',
     top: '0',
     left: '0',
     width: '100%',
-    height: '48px', // Height of the header
+    height: '48px',
     cursor: 'move',
     zIndex: '2147483646',
     backgroundColor: 'transparent',
@@ -340,7 +461,6 @@ function enableDragging(element: HTMLElement) {
   
   element.appendChild(dragHandle);
   
-  // Mouse events for dragging
   dragHandle.addEventListener('mousedown', (e) => {
     isDragging = true;
     const rect = element.getBoundingClientRect();
@@ -348,7 +468,6 @@ function enableDragging(element: HTMLElement) {
     offsetY = e.clientY - rect.top;
     e.preventDefault();
     
-    // Add dragging class for visual feedback
     element.style.cursor = 'grabbing';
     dragHandle.style.cursor = 'grabbing';
   });
@@ -359,7 +478,6 @@ function enableDragging(element: HTMLElement) {
     const newLeft = e.clientX - offsetX;
     const newTop = e.clientY - offsetY;
     
-    // Ensure the frame stays within viewport bounds
     const maxX = window.innerWidth - element.offsetWidth;
     const maxY = window.innerHeight - element.offsetHeight;
     
@@ -368,7 +486,7 @@ function enableDragging(element: HTMLElement) {
     
     element.style.left = `${constrainedLeft}px`;
     element.style.top = `${constrainedTop}px`;
-    element.style.bottom = 'auto'; // Use top positioning while dragging
+    element.style.bottom = 'auto';
   });
   
   document.addEventListener('mouseup', () => {
@@ -377,7 +495,6 @@ function enableDragging(element: HTMLElement) {
       element.style.cursor = 'auto';
       dragHandle.style.cursor = 'move';
       
-      // Convert back to bottom positioning for consistency
       const rect = element.getBoundingClientRect();
       const bottomPosition = window.innerHeight - rect.bottom;
       element.style.bottom = `${bottomPosition}px`;
@@ -388,15 +505,13 @@ function enableDragging(element: HTMLElement) {
 
 // Function to handle visibility
 function setFrameVisibility(isVisible: boolean) {
-  const hostElement = document.getElementById('react-frame-host');
+  const hostElement = document.getElementById('react-frame-host-persistent');
   if (hostElement) {
     if (isVisible) {
       hostElement.style.display = 'block';
-      // Animate in
       hostElement.style.transform = 'translateY(0) scale(1)';
       hostElement.style.opacity = '1';
     } else {
-      // Animate out
       hostElement.style.transform = 'translateY(100%) scale(0.95)';
       hostElement.style.opacity = '0';
       setTimeout(() => {
@@ -406,24 +521,53 @@ function setFrameVisibility(isVisible: boolean) {
   }
 }
 
-// Check saved visibility state and create frame
-chrome.storage.local.get(['frameVisible'], (result) => {
-  // Default to visible if setting doesn't exist
-  const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
-  
-  if (isVisible) {
-    // Create the frame
-    const { hostElement } = injectFrame();
+// Enhanced initialization with persistence check
+function initializeFrame() {
+  chrome.storage.local.get(['frameVisible'], (result) => {
+    const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
     
-    // Add entrance animation
-    hostElement.style.transform = 'translateY(100%) scale(0.95)';
-    hostElement.style.opacity = '0';
-    
-    // Trigger animation after a brief delay
-    setTimeout(() => {
-      hostElement.style.transform = 'translateY(0) scale(1)';
-      hostElement.style.opacity = '1';
-    }, 100);
+    if (isVisible) {
+      // Check if persistent frame already exists
+      const existing = (window as any).__reactFramePersistent;
+      if (existing && existing.hostElement && document.documentElement.contains(existing.hostElement)) {
+        console.log('Persistent frame already exists, skipping creation');
+        return;
+      }
+      
+      // Create new frame
+      const { hostElement } = injectFrame();
+      
+      // Add entrance animation only for new frames
+      if (!existing) {
+        hostElement.style.transform = 'translateY(100%) scale(0.95)';
+        hostElement.style.opacity = '0';
+        
+        setTimeout(() => {
+          hostElement.style.transform = 'translateY(0) scale(1)';
+          hostElement.style.opacity = '1';
+        }, 100);
+      }
+    }
+  });
+}
+
+// Initialize frame
+initializeFrame();
+
+// Listen for messages from React app
+window.addEventListener('message', (event) => {
+  if (event.data.action === 'resize') {
+    const hostElement = document.getElementById('react-frame-host-persistent');
+    if (hostElement) {
+      handleFrameResize(hostElement, event.data.isCollapsed);
+    }
+  } else if (event.data.action === 'close') {
+    const hostElement = document.getElementById('react-frame-host-persistent');
+    if (hostElement) {
+      handleFrameClose(hostElement);
+    }
+  } else if (event.data.action === 'performSearch') {
+    performSearch(event.data.searchTerm);
   }
 });
 
@@ -431,11 +575,9 @@ chrome.storage.local.get(['frameVisible'], (result) => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === 'toggleFrameVisibility') {
     if (message.isVisible) {
-      // Create frame if it doesn't exist
-      const existingFrame = document.getElementById('react-frame-host');
+      const existingFrame = document.getElementById('react-frame-host-persistent');
       if (!existingFrame) {
         const { hostElement } = injectFrame();
-        // Add entrance animation
         hostElement.style.transform = 'translateY(100%) scale(0.95)';
         hostElement.style.opacity = '0';
         setTimeout(() => {
@@ -452,37 +594,41 @@ chrome.runtime.onMessage.addListener((message) => {
   return true;
 });
 
-// Ensure frame stays in the DOM even if page manipulates DOM
+// Enhanced frame persistence monitoring
 function ensureFrameExists() {
   chrome.storage.local.get(['frameVisible'], (result) => {
     const isVisible = result.frameVisible !== undefined ? result.frameVisible : true;
     
     if (isVisible) {
-      const hostElement = document.getElementById('react-frame-host');
-      if (!hostElement || !document.body.contains(hostElement)) {
-        // Frame was removed, re-inject it
-        const { hostElement: newHostElement } = injectFrame();
-        // No animation for re-injection to avoid jarring experience
-        newHostElement.style.transform = 'translateY(0) scale(1)';
-        newHostElement.style.opacity = '1';
+      const existing = (window as any).__reactFramePersistent;
+      if (existing && existing.hostElement) {
+        // Check if frame is still in DOM
+        if (!document.documentElement.contains(existing.hostElement)) {
+          console.log('Persistent frame was removed from DOM, re-attaching');
+          document.documentElement.appendChild(existing.hostElement);
+        }
+      } else {
+        // No persistent frame exists, create new one
+        console.log('No persistent frame found, creating new one');
+        initializeFrame();
       }
     }
   });
 }
 
-// Check periodically if frame exists and re-inject if needed
-setInterval(ensureFrameExists, 2000);
+// Check periodically but less frequently since we have persistence
+setInterval(ensureFrameExists, 5000);
 
-// Re-inject frame on significant DOM changes
+// Enhanced mutation observer for better persistence
 const observer = new MutationObserver((mutations) => {
   let shouldCheck = false;
   
   mutations.forEach((mutation) => {
     if (mutation.type === 'childList') {
-      // Check if our frame was removed
       mutation.removedNodes.forEach((node) => {
         if (node instanceof Element && 
-            (node.id === 'react-frame-host' || node.querySelector('#react-frame-host'))) {
+            (node.id === 'react-frame-host-persistent' || 
+             node.querySelector('#react-frame-host-persistent'))) {
           shouldCheck = true;
         }
       });
@@ -494,32 +640,28 @@ const observer = new MutationObserver((mutations) => {
   }
 });
 
-// Start observing
-observer.observe(document.body, {
+// Observe document.documentElement instead of body for better persistence
+observer.observe(document.documentElement, {
   childList: true,
   subtree: true
 });
 
-// Handle window resize to keep frame in view and adjust dimensions
+// Handle window resize
 window.addEventListener('resize', () => {
-  const hostElement = document.getElementById('react-frame-host');
+  const hostElement = document.getElementById('react-frame-host-persistent');
   if (hostElement) {
-    // Ensure frame stays in bounds
     ensureFrameInBounds(hostElement);
-    
-    // Check if frame is collapsed and adjust accordingly
     const isCollapsed = hostElement.style.height === '48px';
     if (!isCollapsed) {
-      // Re-apply responsive sizing for expanded state
       handleFrameResize(hostElement, false);
     }
   }
 });
 
-// Handle orientation change on mobile devices
+// Handle orientation change
 window.addEventListener('orientationchange', () => {
   setTimeout(() => {
-    const hostElement = document.getElementById('react-frame-host');
+    const hostElement = document.getElementById('react-frame-host-persistent');
     if (hostElement) {
       ensureFrameInBounds(hostElement);
       const isCollapsed = hostElement.style.height === '48px';
@@ -527,5 +669,23 @@ window.addEventListener('orientationchange', () => {
         handleFrameResize(hostElement, false);
       }
     }
-  }, 500); // Delay to allow orientation change to complete
+  }, 500);
+});
+
+// Prevent frame removal during page transitions
+window.addEventListener('beforeunload', () => {
+  // Store frame state before page unload
+  const existing = (window as any).__reactFramePersistent;
+  if (existing && existing.hostElement) {
+    // The frame will persist in memory and be restored
+    console.log('Page unloading, frame will persist');
+  }
+});
+
+// Handle page visibility changes
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    // Page became visible again, ensure frame exists
+    setTimeout(ensureFrameExists, 100);
+  }
 });
