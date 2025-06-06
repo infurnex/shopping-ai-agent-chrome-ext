@@ -9,22 +9,16 @@ import {
   Bot,
   User,
   Loader2,
-  Search,
-  ShoppingCart,
-  CheckCircle,
-  AlertCircle,
-  Clock
+  Search
 } from 'lucide-react';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai' | 'search' | 'system' | 'status';
+  type: 'user' | 'ai' | 'search';
   content: string;
   timestamp: Date;
   image?: string;
   searchTerm?: string;
-  success?: boolean;
-  status?: 'searching' | 'found' | 'not_found';
 }
 
 const App: React.FC = () => {
@@ -33,7 +27,7 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI shopping assistant. You can chat with me, upload images, or use the search feature to find and automatically select products on this website.',
+      content: 'Hello! I\'m your AI assistant. You can chat with me, upload images, or use the search feature to find items on this website.',
       timestamp: new Date()
     }
   ]);
@@ -55,36 +49,6 @@ const App: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Listen for product click results and search status updates from content script
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.action === 'productClickResult') {
-        const resultMessage: Message = {
-          id: Date.now().toString(),
-          type: 'system',
-          content: event.data.message,
-          timestamp: new Date(),
-          success: event.data.success,
-          searchTerm: event.data.searchTerm
-        };
-        setMessages(prev => [...prev, resultMessage]);
-      } else if (event.data.action === 'searchStatusUpdate') {
-        const statusMessage: Message = {
-          id: Date.now().toString(),
-          type: 'status',
-          content: event.data.message,
-          timestamp: new Date(),
-          searchTerm: event.data.searchTerm,
-          status: event.data.status
-        };
-        setMessages(prev => [...prev, statusMessage]);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -201,7 +165,6 @@ const App: React.FC = () => {
       searchTerm: searchValue 
     }, '*');
 
-    const currentSearchTerm = searchValue;
     setSearchValue('');
     
     // Add confirmation message
@@ -209,7 +172,7 @@ const App: React.FC = () => {
       const confirmMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: `I've initiated a search for "${currentSearchTerm}" on this website. The system will automatically find and click the first product result. This process works across page navigation.`,
+        content: `I've initiated a search for "${searchValue}" on this website. The search should be performed in the site's search box.`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, confirmMessage]);
@@ -231,29 +194,12 @@ const App: React.FC = () => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getMessageIcon = (message: Message) => {
-    switch (message.type) {
-      case 'ai':
-        return <Bot size={16} />;
-      case 'search':
-        return <Search size={16} />;
-      case 'status':
-        return message.status === 'searching' ? <Clock size={16} /> : 
-               message.status === 'found' ? <CheckCircle size={16} /> : 
-               <AlertCircle size={16} />;
-      case 'system':
-        return message.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />;
-      default:
-        return <User size={16} />;
-    }
-  };
-
   return (
     <div className={`app-container ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="frame-header">
         <div className="frame-title">
-          <ShoppingCart size={16} />
-          Shopping Assistant
+          <Bot size={16} />
+          AI Assistant
         </div>
         <div className="frame-controls">
           <button className="control-button" onClick={toggleCollapse}>
@@ -280,7 +226,7 @@ const App: React.FC = () => {
               onClick={() => setActiveTab('search')}
             >
               <Search size={16} />
-              Auto-Shop
+              Search
             </button>
           </div>
 
@@ -288,7 +234,8 @@ const App: React.FC = () => {
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className="message-avatar">
-                  {getMessageIcon(message)}
+                  {message.type === 'ai' ? <Bot size={16} /> : 
+                   message.type === 'search' ? <Search size={16} /> : <User size={16} />}
                 </div>
                 <div className="message-content">
                   {message.image && (
@@ -378,7 +325,7 @@ const App: React.FC = () => {
                   value={searchValue}
                   onChange={(e) => setSearchValue(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Enter product name (e.g., wireless headphones)..."
+                  placeholder="Enter search term (e.g., red tshirt)..."
                   className="search-input"
                 />
                 
@@ -388,7 +335,7 @@ const App: React.FC = () => {
                   disabled={!searchValue.trim()}
                 >
                   <Search size={18} />
-                  Find & Click
+                  Find
                 </button>
               </div>
             )}
