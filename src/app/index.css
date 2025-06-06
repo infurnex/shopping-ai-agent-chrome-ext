@@ -246,20 +246,6 @@ html, body {
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
 
-.action-indicator {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--spacing-unit) * 1);
-  margin-top: calc(var(--spacing-unit) * 1);
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
-  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
-  color: white;
-  border-radius: var(--border-radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  box-shadow: var(--shadow-sm);
-}
-
 .message-time {
   font-size: 11px;
   color: var(--text-muted);

@@ -8,11 +8,8 @@ import {
   Paperclip,
   Bot,
   User,
-  Loader2,
-  Search
+  Loader2
 } from 'lucide-react';
-import { AIService } from '../../services/aiService';
-import { AIResponse } from '../../types/aiTypes';
 
 interface Message {
   id: string;
@@ -20,11 +17,6 @@ interface Message {
   content: string;
   timestamp: Date;
   image?: string;
-  action?: {
-    type: string;
-    query?: string;
-    [key: string]: any;
-  };
 }
 
 const App: React.FC = () => {
@@ -33,7 +25,7 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI assistant. I can help you with questions, analyze images, and even perform web searches. Try asking me to "search for" something!',
+      content: 'Hello! I\'m your AI assistant. How can I help you today? Feel free to ask questions or upload images for analysis.',
       timestamp: new Date()
     }
   ]);
@@ -44,7 +36,6 @@ const App: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const aiService = AIService.getInstance();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -85,13 +76,31 @@ const App: React.FC = () => {
     }
   };
 
-  const executeAction = (action: { type: string; query?: string; [key: string]: any }) => {
-    // Send action to content script for execution
-    window.parent.postMessage({ 
-      action: 'executeAction',
-      actionType: action.type,
-      actionParams: action
-    }, '*');
+  const simulateAIResponse = async (userMessage: string, hasImage: boolean): Promise<string> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+    
+    const responses = [
+      "That's an interesting question! Let me help you with that.",
+      "I understand what you're asking. Here's my perspective on this topic.",
+      "Great question! Based on what you've shared, I think...",
+      "I can definitely help you with that. Let me break this down for you.",
+      "That's a thoughtful inquiry. Here's what I would suggest..."
+    ];
+
+    const imageResponses = [
+      "I can see the image you've uploaded. It appears to show...",
+      "Thanks for sharing that image! I can analyze what I see here.",
+      "Interesting image! Let me describe what I observe and provide some insights.",
+      "I've analyzed your image. Here's what stands out to me..."
+    ];
+
+    if (hasImage) {
+      return imageResponses[Math.floor(Math.random() * imageResponses.length)] + " " + 
+             responses[Math.floor(Math.random() * responses.length)];
+    }
+    
+    return responses[Math.floor(Math.random() * responses.length)];
   };
 
   const handleSendMessage = async () => {
@@ -115,36 +124,18 @@ const App: React.FC = () => {
     }
 
     try {
-      const aiResponse: AIResponse = await aiService.sendMessage(
-        userMessage.content, 
-        userMessage.image
-      );
+      const aiResponse = await simulateAIResponse(userMessage.content, !!userMessage.image);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: aiResponse.message,
-        timestamp: new Date(),
-        action: aiResponse.takeAction ? aiResponse.action : undefined
+        content: aiResponse,
+        timestamp: new Date()
       };
 
       setMessages(prev => [...prev, aiMessage]);
-
-      // Execute action if AI requested it
-      if (aiResponse.takeAction && aiResponse.action) {
-        executeAction(aiResponse.action);
-      }
     } catch (error) {
       console.error('Error getting AI response:', error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: 'Sorry, I encountered an error while processing your request. Please try again.',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -159,18 +150,6 @@ const App: React.FC = () => {
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const renderActionIndicator = (action: { type: string; query?: string }) => {
-    if (action.type === 'search') {
-      return (
-        <div className="action-indicator">
-          <Search size={14} />
-          <span>Performing search: "{action.query}"</span>
-        </div>
-      );
-    }
-    return null;
   };
 
   return (
@@ -205,7 +184,6 @@ const App: React.FC = () => {
                     </div>
                   )}
                   <div className="message-text">{message.content}</div>
-                  {message.action && renderActionIndicator(message.action)}
                   <div className="message-time">{formatTime(message.timestamp)}</div>
                 </div>
               </div>
@@ -264,7 +242,7 @@ const App: React.FC = () => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Type your message or ask me to search for something..."
+                placeholder="Type your message..."
                 className="message-input"
                 rows={1}
                 disabled={isLoading}

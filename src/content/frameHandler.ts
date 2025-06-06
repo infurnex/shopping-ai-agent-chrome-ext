@@ -1,5 +1,3 @@
-import { ActionModuleManager } from './actionModules';
-
 // Frame handler module for managing the injected React frame
 export class FrameHandler {
   private hostElement: HTMLElement | null = null;
@@ -9,10 +7,8 @@ export class FrameHandler {
   private isDragging = false;
   private offsetX = 0;
   private offsetY = 0;
-  private actionManager: ActionModuleManager;
 
   constructor() {
-    this.actionManager = new ActionModuleManager();
     this.setupEventListeners();
     this.setupMutationObserver();
   }
@@ -316,19 +312,6 @@ export class FrameHandler {
       if (hostElement) {
         this.handleFrameClose(hostElement);
       }
-    } else if (event.data.action === 'executeAction') {
-      // Handle action execution requests from the React app
-      this.executeAction(event.data.actionType, event.data.actionParams);
-    }
-  }
-
-  // Execute action using action modules
-  private async executeAction(actionType: string, actionParams: any): Promise<void> {
-    try {
-      await this.actionManager.executeAction(actionType, actionParams);
-      console.log(`Action executed successfully: ${actionType}`);
-    } catch (error) {
-      console.error(`Failed to execute action ${actionType}:`, error);
     }
   }
 
