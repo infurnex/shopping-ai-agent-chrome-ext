@@ -22,7 +22,6 @@
   --border-radius-sm: 8px;
   --spacing-unit: 8px;
   --header-height: 48px;
-  --tab-height: 40px;
   --animation-fast: 0.15s;
   --animation-normal: 0.3s;
   --animation-slow: 0.5s;
@@ -141,52 +140,6 @@ html, body {
   min-height: 0; /* Important for flex child to shrink */
 }
 
-/* Tab container */
-.tab-container {
-  display: flex;
-  background-color: var(--border-light);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.tab-button {
-  flex: 1;
-  height: var(--tab-height);
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--spacing-unit) * 1);
-  font-size: 14px;
-  font-weight: 500;
-  transition: all var(--animation-fast) ease;
-  position: relative;
-}
-
-.tab-button:hover {
-  background-color: var(--border-color);
-  color: var(--text-primary);
-}
-
-.tab-button.active {
-  background-color: var(--surface-color);
-  color: var(--primary-color);
-  font-weight: 600;
-}
-
-.tab-button.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: var(--primary-color);
-}
-
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -248,16 +201,6 @@ html, body {
   color: white;
 }
 
-.message.search .message-avatar {
-  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
-  color: white;
-}
-
-.message.system .message-avatar {
-  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
-  color: white;
-}
-
 .message-content {
   flex: 1;
   max-width: 80%;
@@ -300,18 +243,6 @@ html, body {
 }
 
 .message.ai .message-text {
-  border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
-}
-
-.message.search .message-text {
-  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
-  color: white;
-  border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
-}
-
-.message.system .message-text {
-  background: linear-gradient(135deg, var(--success-color) 0%, var(--primary-color) 100%);
-  color: white;
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
 
@@ -440,23 +371,6 @@ html, body {
   color: var(--text-muted);
 }
 
-.search-input {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-primary);
-  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
-  height: 36px;
-  font-family: inherit;
-}
-
-.search-input::placeholder {
-  color: var(--text-muted);
-}
-
 .send-btn {
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
   color: white;
@@ -481,78 +395,6 @@ html, body {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
-}
-
-.search-btn {
-  background: linear-gradient(135deg, var(--secondary-color) 0%, var(--success-color) 100%);
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--spacing-unit) * 1);
-  padding: 0 calc(var(--spacing-unit) * 2);
-  height: 36px;
-  border-radius: var(--border-radius-sm);
-  transition: all var(--animation-fast) ease;
-  box-shadow: var(--shadow-sm);
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.search-btn:hover:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: var(--shadow-md);
-}
-
-.search-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Search controls container */
-.search-controls {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--spacing-unit) * 1.5);
-}
-
-/* Product actions */
-.product-actions {
-  display: flex;
-  justify-content: center;
-}
-
-.product-click-btn {
-  background: linear-gradient(135deg, var(--accent-color) 0%, var(--warning-color) 100%);
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--spacing-unit) * 1);
-  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
-  border-radius: calc(var(--spacing-unit) * 2);
-  transition: all var(--animation-fast) ease;
-  box-shadow: var(--shadow-sm);
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-  min-height: 44px;
-}
-
-.product-click-btn:hover {
-  transform: scale(1.05);
-  box-shadow: var(--shadow-md);
-  background: linear-gradient(135deg, var(--warning-color) 0%, var(--accent-color) 100%);
-}
-
-.product-click-btn:active {
-  transform: scale(0.98);
 }
 
 /* Animations */
@@ -590,20 +432,6 @@ html, body {
   
   .selected-image-preview {
     max-width: 100px;
-  }
-  
-  .search-btn {
-    padding: 0 calc(var(--spacing-unit) * 1.5);
-    font-size: 13px;
-  }
-  
-  .product-click-btn {
-    padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
-    font-size: 13px;
-  }
-  
-  .search-controls {
-    gap: calc(var(--spacing-unit) * 1);
   }
 }
 
