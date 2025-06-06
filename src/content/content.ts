@@ -5,7 +5,7 @@ let hostElement: HTMLElement | null = null;
 // Action types that can be queued
 interface Action {
   id: string;
-  type: 'search' | 'find_and_click_product' | 'navigate_to_url';
+  type: 'search' | 'find_and_click_product';
   data: any;
   timestamp: number;
   retries: number;
@@ -31,82 +31,70 @@ function addActionToQueue(action: Omit<Action, 'id' | 'timestamp' | 'retries'>) 
   });
 }
 
-// Function to get and process action queue sequentially
+// Function to get and process action queue sequentially using while loop
 function processActionQueue() {
   chrome.storage.local.get(['actionQueue'], (result) => {
-    const queue = result.actionQueue || [];
+    let queue = result.actionQueue || [];
     
     if (queue.length === 0) {
-      console.log('No actions in queue');
       return;
     }
     
-    console.log('Processing action queue:', queue);
+    console.log('Processing action queue:', queue.length, 'actions');
     
-    // Process only the first action in the queue
-    const action = queue[0]; // Get first action
-    const remainingQueue = queue.slice(1); // Remove first action from queue
-    
-    const currentTime = Date.now();
-    const timeDiff = currentTime - action.timestamp;
-    
-    // Skip actions older than 2 minutes
-    if (timeDiff > 120000) {
-      console.log('Action expired:', action);
-      sendActionFeedback(action, false, 'Action expired');
+    // Use while loop to process actions sequentially
+    while (queue.length > 0) {
+      // Pop the first action from the queue
+      const action = queue.shift()!; // Remove first action
       
-      // Update queue without the expired action and continue processing
-      chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
-        // Process next action if any
-        if (remainingQueue.length > 0) {
-          setTimeout(() => processActionQueue(), 100);
-        }
-      });
-      return;
-    }
-    
-    // Try to execute the action
-    const executed = executeAction(action);
-    
-    if (!executed) {
-      // If action couldn't be executed, increment retry count
-      action.retries++;
+      const currentTime = Date.now();
+      const timeDiff = currentTime - action.timestamp;
       
-      if (action.retries < action.maxRetries) {
-        // Put the action back at the beginning of the queue for retry
-        const retryQueue = [action, ...remainingQueue];
-        chrome.storage.local.set({ actionQueue: retryQueue }, () => {
-          console.log(`Action failed, will retry (${action.retries}/${action.maxRetries}):`, action);
-          // Retry after a delay
-          setTimeout(() => processActionQueue(), 2000);
-        });
-      } else {
-        // Max retries exceeded, remove action and continue
-        console.log('Action failed after max retries:', action);
-        sendActionFeedback(action, false, 'Max retries exceeded');
+      // Skip actions older than 2 minutes
+      if (timeDiff > 120000) {
+        console.log('Action expired:', action);
+        sendActionFeedback(action, false, 'Action expired');
         
-        chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
-          // Process next action if any
-          if (remainingQueue.length > 0) {
-            setTimeout(() => processActionQueue(), 100);
-          }
-        });
+        // Update storage and continue with next action
+        chrome.storage.local.set({ actionQueue: queue });
+        continue;
       }
-    } else {
-      // Action executed successfully, remove it from queue
-      console.log('Action executed successfully:', action);
-      chrome.storage.local.set({ actionQueue: remainingQueue }, () => {
-        // For actions that might cause page navigation, don't immediately process next action
-        // The new page load will trigger processActionQueue again
-        if (action.type === 'search' || action.type === 'navigate_to_url') {
-          console.log('Action may cause page navigation, waiting for page load to process next action');
+      
+      // Try to execute the action
+      const executed = executeAction(action);
+      
+      if (!executed) {
+        // If action couldn't be executed, increment retry count
+        action.retries++;
+        
+        if (action.retries < action.maxRetries) {
+          // Put the action back at the beginning of the queue for retry
+          queue.unshift(action);
+          chrome.storage.local.set({ actionQueue: queue }, () => {
+            console.log(`Action failed, will retry (${action.retries}/${action.maxRetries}):`, action);
+          });
+          // Break the loop to retry later
+          break;
         } else {
-          // For other actions, process next action after a short delay
-          if (remainingQueue.length > 0) {
-            setTimeout(() => processActionQueue(), 500);
-          }
+          // Max retries exceeded, remove action and continue
+          console.log('Action failed after max retries:', action);
+          sendActionFeedback(action, false, 'Max retries exceeded');
+          chrome.storage.local.set({ actionQueue: queue });
+          continue;
         }
-      });
+      } else {
+        // Action executed successfully, remove it from queue
+        console.log('Action executed successfully:', action);
+        chrome.storage.local.set({ actionQueue: queue });
+        
+        // For actions that might cause page navigation, break the loop
+        // The new page load will trigger processActionQueue again
+        if (action.type === 'search') {
+          console.log('Search action executed, waiting for page navigation');
+          break;
+        }
+        // Continue with next action for non-navigation actions
+      }
     }
   });
 }
@@ -120,9 +108,6 @@ function executeAction(action: Action): boolean {
       
       case 'find_and_click_product':
         return executeFindAndClickAction(action);
-      
-      case 'navigate_to_url':
-        return executeNavigateAction(action);
       
       default:
         console.warn('Unknown action type:', action.type);
@@ -151,13 +136,6 @@ function executeSearchAction(action: Action): boolean {
   // Perform the search
   performSearchDirectly(searchInput, searchTerm);
   
-  // Add follow-up action to find and click product after search
-  addActionToQueue({
-    type: 'find_and_click_product',
-    data: { searchTerm },
-    maxRetries: 3
-  });
-  
   return true;
 }
 
@@ -181,20 +159,6 @@ function executeFindAndClickAction(action: Action): boolean {
     findAndClickFirstProduct(searchTerm);
   }, 1000);
   
-  return true;
-}
-
-// Execute navigate action
-function executeNavigateAction(action: Action): boolean {
-  const { url } = action.data;
-  
-  if (!url) {
-    console.log('No URL provided for navigate action');
-    return false;
-  }
-  
-  console.log('Executing navigate action to:', url);
-  window.location.href = url;
   return true;
 }
 
@@ -822,14 +786,20 @@ function sendProductClickFeedback(searchTerm: string, success: boolean, productU
 function performSearch(searchTerm: string) {
   console.log('Performing search for:', searchTerm);
   
-  // Add search action to queue
+  // Add 2 actions to queue: search and find_and_click_product
   addActionToQueue({
     type: 'search',
     data: { searchTerm },
     maxRetries: 2
   });
   
-  // Try to execute immediately
+  addActionToQueue({
+    type: 'find_and_click_product',
+    data: { searchTerm },
+    maxRetries: 3
+  });
+  
+  // Ask content script to execute them immediately
   setTimeout(() => {
     processActionQueue();
   }, 100);
