@@ -31,7 +31,7 @@ export default defineConfig({
           return '[name].js';
         },
         chunkFileNames: (chunkInfo) => {
-          // Prevent unnecessary chunk files
+          // Prevent unnecessary chunk files for content script
           return 'chunks/[name].js';
         },
         assetFileNames: (assetInfo) => {
@@ -50,9 +50,16 @@ export default defineConfig({
           // Handle other assets
           return 'assets/[name][extname]';
         },
+        // Ensure content script is built as IIFE (Immediately Invoked Function Expression)
+        format: (chunkInfo) => {
+          if (chunkInfo.name === 'content') {
+            return 'iife';
+          }
+          return 'es';
+        },
       },
       external: [
-        // Exclude any unnecessary dependencies
+        // Don't externalize anything for content script
       ],
     },
     // Minimize bundle size
