@@ -21,33 +21,28 @@ export default defineConfig({
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          return chunkInfo.name === 'content' 
-            ? 'content.js' 
-            : chunkInfo.name === 'frame'
-              ? 'frame.js'
-              : '[name]/[name].js';
+          if (chunkInfo.name === 'content') {
+            return 'content.js';
+          }
+          if (chunkInfo.name === 'frame') {
+            return 'frame.js';
+          }
+          return '[name]/index.js';
         },
         chunkFileNames: '[name].js',
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split('.');
-          const extType = info[info.length - 1];
-          
-          if (/\.(png|jpe?g|svg|gif|tiff|bmp|ico)$/i.test(assetInfo.name)) {
-            return 'assets/images/[name][extname]';
+          if (/\.css$/i.test(assetInfo.name || '')) {
+            if (assetInfo.name === 'index.css' && assetInfo.source?.toString().includes('frame-root')) {
+              return 'frame.css';
+            }
+            return '[name]/style.css';
           }
-          
-          if (/\.css$/i.test(assetInfo.name)) {
-            return assetInfo.name === 'frame.css' 
-              ? 'frame.css' 
-              : '[name]/[name][extname]';
-          }
-          
           return 'assets/[name][extname]';
         },
       },
     },
   },
-  optimizeDeps: {
-    exclude: ['lucide-react'],
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
   },
 });
