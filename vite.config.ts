@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         // Main extension files
@@ -21,28 +22,49 @@ export default defineConfig({
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === 'content') {
-            return 'content.js';
-          }
-          if (chunkInfo.name === 'frame') {
-            return 'frame.js';
-          }
-          return '[name]/index.js';
+          // Generate clean file names for extension files
+          const name = chunkInfo.name;
+          if (name === 'content') return 'content.js';
+          if (name === 'frame') return 'frame.js';
+          if (name === 'popup') return 'popup/popup.js';
+          if (name === 'options') return 'options/options.js';
+          return '[name].js';
         },
-        chunkFileNames: '[name].js',
+        chunkFileNames: (chunkInfo) => {
+          // Prevent unnecessary chunk files
+          return 'chunks/[name].js';
+        },
         assetFileNames: (assetInfo) => {
-          if (/\.css$/i.test(assetInfo.name || '')) {
-            if (assetInfo.name === 'index.css' && assetInfo.source?.toString().includes('frame-root')) {
+          const name = assetInfo.name || '';
+          
+          // Handle CSS files
+          if (name.endsWith('.css')) {
+            if (name.includes('index') && assetInfo.source?.toString().includes('frame-root')) {
               return 'frame.css';
             }
-            return '[name]/style.css';
+            if (name.includes('popup')) return 'popup/popup.css';
+            if (name.includes('options')) return 'options/options.css';
+            return '[name].css';
           }
+          
+          // Handle other assets
           return 'assets/[name][extname]';
         },
+      },
+      external: [
+        // Exclude any unnecessary dependencies
+      ],
+    },
+    // Minimize bundle size
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: false, // Keep console logs for debugging
+        drop_debugger: true,
       },
     },
   },
   define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
   },
 });
