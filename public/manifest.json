@@ -3,6 +3,9 @@
   "name": "React Frame Injector",
   "version": "1.0.0",
   "description": "Injects a React application frame at the bottom left of web pages",
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html"
   },
@@ -19,5 +22,5 @@
       "matches": ["<all_urls>"]
     }
   ],
-  "permissions": ["storage"]
+  "permissions": ["storage", "activeTab"]
 }

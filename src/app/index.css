@@ -8,6 +8,7 @@
   --warning-color: #f59e0b;
   --error-color: #ef4444;
   --action-color: #8b5cf6;
+  --system-color: #06b6d4;
   --background-color: rgba(255, 255, 255, 0.98);
   --surface-color: #ffffff;
   --text-primary: #111827;
@@ -104,6 +105,16 @@ html, body {
   gap: calc(var(--spacing-unit) * 1);
 }
 
+.queue-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
 .frame-controls {
   display: flex;
   gap: calc(var(--spacing-unit) * 0.5);
@@ -138,7 +149,66 @@ html, body {
   overflow: hidden;
   background-color: var(--surface-color);
   border-radius: 0 0 var(--border-radius) var(--border-radius);
-  min-height: 0; /* Important for flex child to shrink */
+  min-height: 0;
+}
+
+/* Workflow controls */
+.workflow-controls {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 1);
+  padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(135deg, var(--border-light) 0%, rgba(255, 255, 255, 0.5) 100%);
+  flex-shrink: 0;
+}
+
+.workflow-btn {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 0.5);
+  padding: calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--animation-fast) ease;
+}
+
+.simulate-btn {
+  background: linear-gradient(135deg, var(--success-color) 0%, #059669 100%);
+  color: white;
+}
+
+.simulate-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.clear-btn {
+  background: linear-gradient(135deg, var(--warning-color) 0%, #d97706 100%);
+  color: white;
+}
+
+.clear-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.workflow-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing-unit) * 0.5);
+  font-size: 12px;
+  color: var(--system-color);
+  font-weight: 600;
 }
 
 .messages-container {
@@ -149,7 +219,7 @@ html, body {
   flex-direction: column;
   gap: calc(var(--spacing-unit) * 2);
   scroll-behavior: smooth;
-  min-height: 0; /* Important for flex child to shrink */
+  min-height: 0;
 }
 
 .messages-container::-webkit-scrollbar {
@@ -202,8 +272,8 @@ html, body {
   color: white;
 }
 
-.message.action .message-avatar {
-  background: linear-gradient(135deg, var(--action-color) 0%, var(--primary-color) 100%);
+.message.system .message-avatar {
+  background: linear-gradient(135deg, var(--system-color) 0%, var(--secondary-color) 100%);
   color: white;
 }
 
@@ -252,10 +322,32 @@ html, body {
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
 }
 
-.message.action .message-text {
-  background: linear-gradient(135deg, var(--action-color) 0%, var(--primary-color) 100%);
+.message.system .message-text {
+  background: linear-gradient(135deg, var(--system-color) 0%, var(--secondary-color) 100%);
   color: white;
   border-bottom-left-radius: calc(var(--spacing-unit) * 0.5);
+}
+
+.actions-preview {
+  margin-top: calc(var(--spacing-unit) * 1);
+  padding: calc(var(--spacing-unit) * 1.5);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.actions-title {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: calc(var(--spacing-unit) * 1);
+  opacity: 0.9;
+}
+
+.action-item {
+  font-size: 12px;
+  margin-bottom: calc(var(--spacing-unit) * 0.5);
+  opacity: 0.8;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
 
 .message-time {
@@ -444,6 +536,16 @@ html, body {
   
   .selected-image-preview {
     max-width: 100px;
+  }
+  
+  .workflow-controls {
+    flex-wrap: wrap;
+    gap: calc(var(--spacing-unit) * 0.5);
+  }
+  
+  .workflow-btn {
+    font-size: 11px;
+    padding: calc(var(--spacing-unit) * 0.75) calc(var(--spacing-unit) * 1);
   }
 }
 

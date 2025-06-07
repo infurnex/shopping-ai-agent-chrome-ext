@@ -1,98 +1,78 @@
-import { ActionParams } from './index';
-
-export function searchAction(params: ActionParams): void {
-  const { query } = params;
+export async function searchAction(selectors: string[], value: string): Promise<boolean> {
+  console.log('Executing search action with selectors:', selectors, 'value:', value);
   
-  if (!query) {
-    console.warn('Search action called without query parameter');
-    return;
+  if (selectors.length < 2) {
+    console.error('Search action requires at least 2 selectors: input and button');
+    return false;
   }
-
-  // Detect the current website and perform appropriate search
-  const hostname = window.location.hostname.toLowerCase();
+  
+  const inputSelector = selectors[0];
+  const buttonSelector = selectors[1];
   
   try {
-    if (hostname.includes('amazon')) {
-      performAmazonSearch(query);
-    } else if (hostname.includes('ebay')) {
-      performEbaySearch(query);
-    } else if (hostname.includes('walmart')) {
-      performWalmartSearch(query);
-    } else if (hostname.includes('target')) {
-      performTargetSearch(query);
-    } else {
-      // Default to Google search if on unsupported site
-      performGoogleSearch(query);
+    // Find search input
+    const searchInput = document.querySelector(inputSelector) as HTMLInputElement;
+    if (!searchInput) {
+      console.error(`Search input not found with selector: ${inputSelector}`);
+      return false;
     }
+    
+    // Find search button
+    const searchButton = document.querySelector(buttonSelector) as HTMLButtonElement;
+    if (!searchButton) {
+      console.error(`Search button not found with selector: ${buttonSelector}`);
+      return false;
+    }
+    
+    console.log('Found search input and button');
+    
+    // Scroll input into view
+    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Highlight input briefly
+    const originalInputStyle = searchInput.style.cssText;
+    searchInput.style.cssText += 'outline: 3px solid #4ecdc4; outline-offset: 2px;';
+    
+    // Clear existing value and set new value
+    searchInput.value = '';
+    searchInput.focus();
+    
+    // Type the value character by character for more realistic behavior
+    for (let i = 0; i < value.length; i++) {
+      searchInput.value += value[i];
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 50));
+    }
+    
+    // Dispatch additional events
+    searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+    searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    
+    console.log(`Entered search value: ${value}`);
+    
+    // Wait a moment then click search button
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Highlight button briefly
+    const originalButtonStyle = searchButton.style.cssText;
+    searchButton.style.cssText += 'outline: 3px solid #ff6b6b; outline-offset: 2px;';
+    
+    // Click search button
+    searchButton.click();
+    
+    console.log('Search button clicked');
+    
+    // Restore original styles
+    setTimeout(() => {
+      searchInput.style.cssText = originalInputStyle;
+      searchButton.style.cssText = originalButtonStyle;
+    }, 1000);
+    
+    return true;
+    
   } catch (error) {
     console.error('Error performing search action:', error);
-    // Fallback to Google search
-    performGoogleSearch(query);
+    return false;
   }
-}
-
-function performAmazonSearch(query: string): void {
-  // Try to find Amazon's search input
-  const searchInput = document.querySelector('#twotabsearchtextbox') as HTMLInputElement;
-  const searchButton = document.querySelector('#nav-search-submit-button') as HTMLButtonElement;
-  
-  if (searchInput && searchButton) {
-    searchInput.value = query;
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    searchButton.click();
-  } else {
-    // Fallback: navigate to search URL
-    window.location.href = `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
-  }
-}
-
-function performEbaySearch(query: string): void {
-  const searchInput = document.querySelector('#gh-ac') as HTMLInputElement;
-  const searchButton = document.querySelector('#gh-btn') as HTMLButtonElement;
-  
-  if (searchInput && searchButton) {
-    searchInput.value = query;
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    searchButton.click();
-  } else {
-    window.location.href = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`;
-  }
-}
-
-function performWalmartSearch(query: string): void {
-  const searchInput = document.querySelector('[data-automation-id="global-search-input"]') as HTMLInputElement;
-  const searchButton = document.querySelector('[data-automation-id="global-search-submit"]') as HTMLButtonElement;
-  
-  if (searchInput && searchButton) {
-    searchInput.value = query;
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    searchButton.click();
-  } else {
-    window.location.href = `https://www.walmart.com/search?q=${encodeURIComponent(query)}`;
-  }
-}
-
-function performTargetSearch(query: string): void {
-  const searchInput = document.querySelector('[data-test="@web/Search/SearchInput"]') as HTMLInputElement;
-  
-  if (searchInput) {
-    searchInput.value = query;
-    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-    
-    // Simulate Enter key press
-    const enterEvent = new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      bubbles: true
-    });
-    searchInput.dispatchEvent(enterEvent);
-  } else {
-    window.location.href = `https://www.target.com/s?searchTerm=${encodeURIComponent(query)}`;
-  }
-}
-
-function performGoogleSearch(query: string): void {
-  // Open Google search in new tab
-  window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
 }

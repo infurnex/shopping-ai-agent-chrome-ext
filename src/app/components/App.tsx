@@ -5,24 +5,29 @@ import {
   Maximize2, 
   Send, 
   Image as ImageIcon, 
-  Paperclip,
   Bot,
   User,
   Loader2,
-  Search
+  Search,
+  Play,
+  Square,
+  RotateCcw
 } from 'lucide-react';
-import { callAIAgent, AIResponse } from '../services/aiService';
+import { callPlannerAgent, PlannerResponse } from '../services/plannerAgent';
 
 interface Message {
   id: string;
-  type: 'user' | 'ai' | 'action';
+  type: 'user' | 'ai' | 'action' | 'system';
   content: string;
   timestamp: Date;
   image?: string;
-  action?: {
-    type: string;
-    params: any;
-  };
+  actions?: any[];
+}
+
+interface QueueStatus {
+  queueLength: number;
+  isProcessing: boolean;
+  currentAction?: string;
 }
 
 const App: React.FC = () => {
@@ -31,13 +36,14 @@ const App: React.FC = () => {
     {
       id: '1',
       type: 'ai',
-      content: 'Hello! I\'m your AI shopping assistant. I can help you search for products on this website. Try asking me to "search for red t-shirt" or upload an image of something you\'d like to find!',
+      content: 'Hello! I\'m your AI shopping assistant. I can help you automate shopping tasks. Try saying "buy red t-shirt" or "search for wireless headphones" to see the workflow in action!',
       timestamp: new Date()
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>({ queueLength: 0, isProcessing: false });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +56,41 @@ const App: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Listen for messages from content script
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.action === 'actionCompleted') {
+        addSystemMessage(`✅ Action completed: ${event.data.actionData.goal}`);
+        updateQueueStatus();
+      } else if (event.data.action === 'actionFailed') {
+        addSystemMessage(`❌ Action failed: ${event.data.actionData.goal} - ${event.data.error}`);
+        updateQueueStatus();
+      } else if (event.data.action === 'queueStatusUpdate') {
+        setQueueStatus(event.data.status);
+      } else if (event.data.action === 'queueCleared') {
+        addSystemMessage('🧹 Action queue cleared');
+        setQueueStatus({ queueLength: 0, isProcessing: false });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const addSystemMessage = (content: string) => {
+    const systemMessage: Message = {
+      id: Date.now().toString(),
+      type: 'system',
+      content,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, systemMessage]);
+  };
+
+  const updateQueueStatus = () => {
+    window.parent.postMessage({ action: 'getQueueStatus' }, '*');
+  };
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -82,23 +123,38 @@ const App: React.FC = () => {
     }
   };
 
-  const executeAction = (action: { type: string; params: any }) => {
-    // Send message to content script to execute browser action
-    window.parent.postMessage({
-      action: 'executeAction',
-      actionData: action
-    }, '*');
-    
-    // Add action message to chat
-    const actionMessage: Message = {
-      id: (Date.now() + 2).toString(),
-      type: 'action',
-      content: `🔍 Searching for "${action.params.query}"...`,
+  const triggerWorkflowSimulation = () => {
+    // Simulate a complex shopping workflow
+    const mockActions = [
+      { goal: "search", query: "red t-shirt" },
+      { goal: "select", target: "first product" },
+      { goal: "click", target: "add to cart" },
+      { goal: "checkout" }
+    ];
+
+    // Add workflow message
+    const workflowMessage: Message = {
+      id: Date.now().toString(),
+      type: 'system',
+      content: '🚀 Starting workflow simulation: Search → Select → Add to Cart → Checkout',
       timestamp: new Date(),
-      action: action
+      actions: mockActions
     };
-    
-    setMessages(prev => [...prev, actionMessage]);
+
+    setMessages(prev => [...prev, workflowMessage]);
+
+    // Send actions to content script
+    window.parent.postMessage({
+      action: 'triggerWorkflow',
+      actions: mockActions
+    }, '*');
+
+    // Update queue status
+    setTimeout(() => updateQueueStatus(), 500);
+  };
+
+  const clearQueue = () => {
+    window.parent.postMessage({ action: 'clearQueue' }, '*');
   };
 
   const handleSendMessage = async () => {
@@ -123,26 +179,33 @@ const App: React.FC = () => {
     }
 
     try {
-      const aiResponse: AIResponse = await callAIAgent(currentInput, !!selectedImage);
+      const plannerResponse: PlannerResponse = await callPlannerAgent(currentInput, !!selectedImage);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
-        content: aiResponse.message,
-        timestamp: new Date()
+        content: plannerResponse.message,
+        timestamp: new Date(),
+        actions: plannerResponse.actions
       };
 
       setMessages(prev => [...prev, aiMessage]);
       
-      // Execute action if AI decided to take action
-      if (aiResponse.takeAction && aiResponse.action) {
+      // If planner created actions, add them to queue
+      if (plannerResponse.actions && plannerResponse.actions.length > 0) {
         setTimeout(() => {
-          executeAction(aiResponse.action!);
-        }, 500); // Small delay for better UX
+          window.parent.postMessage({
+            action: 'triggerWorkflow',
+            actions: plannerResponse.actions
+          }, '*');
+          
+          // Update queue status
+          setTimeout(() => updateQueueStatus(), 500);
+        }, 1000);
       }
       
     } catch (error) {
-      console.error('Error getting AI response:', error);
+      console.error('Error getting planner response:', error);
       
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -174,6 +237,9 @@ const App: React.FC = () => {
         <div className="frame-title">
           <Bot size={16} />
           AI Shopping Assistant
+          {queueStatus.queueLength > 0 && (
+            <span className="queue-badge">{queueStatus.queueLength}</span>
+          )}
         </div>
         <div className="frame-controls">
           <button className="control-button" onClick={toggleCollapse}>
@@ -187,13 +253,38 @@ const App: React.FC = () => {
       
       {!isCollapsed && (
         <div className="chat-container">
+          <div className="workflow-controls">
+            <button 
+              className="workflow-btn simulate-btn"
+              onClick={triggerWorkflowSimulation}
+              disabled={queueStatus.isProcessing}
+            >
+              <Play size={16} />
+              Simulate Workflow
+            </button>
+            <button 
+              className="workflow-btn clear-btn"
+              onClick={clearQueue}
+              disabled={queueStatus.queueLength === 0}
+            >
+              <RotateCcw size={16} />
+              Clear Queue
+            </button>
+            {queueStatus.isProcessing && (
+              <div className="processing-indicator">
+                <Loader2 size={16} className="animate-spin" />
+                Processing...
+              </div>
+            )}
+          </div>
+
           <div className="messages-container">
             {messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
                 <div className="message-avatar">
                   {message.type === 'ai' ? (
                     <Bot size={16} />
-                  ) : message.type === 'action' ? (
+                  ) : message.type === 'system' ? (
                     <Search size={16} />
                   ) : (
                     <User size={16} />
@@ -206,6 +297,16 @@ const App: React.FC = () => {
                     </div>
                   )}
                   <div className="message-text">{message.content}</div>
+                  {message.actions && message.actions.length > 0 && (
+                    <div className="actions-preview">
+                      <div className="actions-title">Planned Actions:</div>
+                      {message.actions.map((action, index) => (
+                        <div key={index} className="action-item">
+                          {index + 1}. {action.goal} {action.query && `"${action.query}"`} {action.target && `(${action.target})`}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="message-time">{formatTime(message.timestamp)}</div>
                 </div>
               </div>
@@ -219,7 +320,7 @@ const App: React.FC = () => {
                 <div className="message-content">
                   <div className="typing-indicator">
                     <Loader2 size={16} className="animate-spin" />
-                    <span>AI is thinking...</span>
+                    <span>AI is planning...</span>
                   </div>
                 </div>
               </div>
@@ -264,7 +365,7 @@ const App: React.FC = () => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Try: 'search for red t-shirt' or 'find wireless headphones'"
+                placeholder="Try: 'buy red t-shirt' or 'search for wireless headphones'"
                 className="message-input"
                 rows={1}
                 disabled={isLoading}
