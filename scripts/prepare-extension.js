@@ -9,9 +9,15 @@ async function copyPublicFiles() {
     // Read all files from public directory
     const files = await readdir(srcDir);
     
-    // Copy each file to dist
+    // Copy each file to dist (only actual files, not directories)
     for (const file of files) {
-      // Skip directories for now
+      // Skip any .js files since they should come from src/ build
+      if (file.endsWith('.js')) {
+        console.log(`Skipping ${file} - should be built from src/`);
+        continue;
+      }
+      
+      // Only copy non-JS files
       if (file.includes('.')) {
         await copyFile(join(srcDir, file), join(distDir, file));
         console.log(`Copied ${file}`);
