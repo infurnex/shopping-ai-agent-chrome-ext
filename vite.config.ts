@@ -52,7 +52,8 @@ export default defineConfig({
         },
         // Ensure content script is built as IIFE (Immediately Invoked Function Expression)
         format: (chunkInfo) => {
-          if (chunkInfo.name === 'content') {
+          // Add defensive check to prevent undefined return value
+          if (chunkInfo && chunkInfo.name === 'content') {
             return 'iife';
           }
           return 'es';
